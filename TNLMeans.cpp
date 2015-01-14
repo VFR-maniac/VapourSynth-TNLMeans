@@ -39,6 +39,7 @@ TNLMeans::TNLMeans
     double _a, double _h, bool _ssd,
     const VSMap *in,
     VSMap       *out,
+    VSCore      *core,
     const VSAPI *vsapi
 ) : Ax( _Ax ), Ay( _Ay ), Az( _Az ),
     Sx( _Sx ), Sy( _Sy ),
@@ -47,10 +48,13 @@ TNLMeans::TNLMeans
 {
     node =  vsapi->propGetNode( in, "clip", 0, 0 );
     vi   = *vsapi->getVideoInfo( node );
-    fc = nullptr;
-    gw = nullptr;
-    weightsb = sumsb = nullptr;
-    ds = nullptr;
+    fcs       = nullptr;
+    gws       = nullptr;
+    sumsbs    = nullptr;
+    weightsbs = nullptr;
+    dss       = nullptr;
+    threadPhase = 0;
+    numThreads = vsapi->getCoreInfo( core )->numThreads;
     if( vi.format->colorFamily == cmCompat ) { vsapi->setError( out, "TNLMeans:  only planar formats are supported!"); return; }
     if( vi.format->bitsPerSample != 8 )      { vsapi->setError( out, "TNLMeans:  only 8-bit formats are supported!"); return; }
     if( h <= 0.0 ) { vsapi->setError( out, "TNLMeans:  h must be greater than 0!" );               return; }
@@ -78,68 +82,113 @@ TNLMeans::TNLMeans
     Azdm1 = Az * 2;
     a2 = a * a;
 
-    if( Az ) fc = new nlCache( Az * 2 + 1, (Bx > 0 || By > 0), vi, vsapi );
+    if( Az )
+    {
+        fcs = static_cast<nlCache **>(std::malloc( numThreads * sizeof(nlCache *) ));
+        if( !fcs ) { vsapi->setError( out, "TNLMeans:  malloc failure (fcs)!" ); return; }
+        for( int i = 0; i < numThreads; ++i )
+            fcs[i] = new nlCache( Az * 2 + 1, (Bx > 0 || By > 0), vi, vsapi );
+    }
 
     if( Bx || By )
     {
-        sumsb = static_cast<double *>(AlignedMemory::alloc( Bxa * sizeof(double), 16 ));
-        if( !sumsb )
+        sumsbs = static_cast<double **>(std::malloc( numThreads * sizeof(double *) ));
+        if( !sumsbs ) { vsapi->setError( out, "TNLMeans:  malloc failure (sumsbs)!" ); return; }
+        for( int i = 0; i < numThreads; ++i )
         {
-            vsapi->setError( out, "TNLMeans:  malloc failure (sumsb)!" );
-            return;
+            sumsbs[i] = static_cast<double *>(AlignedMemory::alloc( Bxa * sizeof(double), 16 ));
+            if( !sumsbs[i] ) { vsapi->setError( out, "TNLMeans:  malloc failure (sumsb)!" ); return; }
         }
-        weightsb = static_cast<double *>(AlignedMemory::alloc( Bxa * sizeof(double), 16 ));
-        if( !weightsb )
+        weightsbs = static_cast<double **>(std::malloc( numThreads * sizeof(double *) ));
+        if( !weightsbs ) { vsapi->setError( out, "TNLMeans:  malloc failure (weightsbs)!" ); return; }
+        for( int i = 0; i < numThreads; ++i )
         {
-            vsapi->setError( out, "TNLMeans:  malloc failure (weightsb)!" );
-            return;
+            weightsbs[i] = static_cast<double *>(AlignedMemory::alloc( Bxa * sizeof(double), 16 ));
+            if( !weightsbs[i] ) { vsapi->setError( out, "TNLMeans:  malloc failure (weightsb)!" ); return; }
         }
     }
     else if( Az == 0 )
     {
-        ds = new SDATA();
-        ds->sums    = static_cast<double *>(AlignedMemory::alloc( vi.width * vi.height * sizeof(double), 16 ));
-        ds->weights = static_cast<double *>(AlignedMemory::alloc( vi.width * vi.height * sizeof(double), 16 ));
-        ds->wmaxs   = static_cast<double *>(AlignedMemory::alloc( vi.width * vi.height * sizeof(double), 16 ));
-        if( !ds || !ds->sums || !ds->weights || !ds->wmaxs )
+        dss = static_cast<SDATA **>(std::malloc( numThreads * sizeof(SDATA *) ));
+        if( !dss ) { vsapi->setError( out, "TNLMeans:  malloc failure (ds)!" ); return; }
+        for( int i = 0; i < numThreads; ++i )
         {
-            vsapi->setError( out, "TNLMeans:  malloc failure (ds)!" );
-            return;
+            SDATA *ds = new SDATA();
+            dss[i] = ds;
+            ds->sums    = static_cast<double *>(AlignedMemory::alloc( vi.width * vi.height * sizeof(double), 16 ));
+            ds->weights = static_cast<double *>(AlignedMemory::alloc( vi.width * vi.height * sizeof(double), 16 ));
+            ds->wmaxs   = static_cast<double *>(AlignedMemory::alloc( vi.width * vi.height * sizeof(double), 16 ));
+            if( !ds->sums || !ds->weights || !ds->wmaxs )
+            {
+                vsapi->setError( out, "TNLMeans:  malloc failure (ds->member)!" );
+                return;
+            }
         }
     }
 
-    gw = static_cast<double *>(AlignedMemory::alloc( Sxd * Syd * sizeof(double), 16 ));
-    if( !gw ) vsapi->setError( out, "TNLMeans:  malloc failure (gw)!" );
-    int w = 0, m, n;
-    for( int j = -Sy; j <= Sy; ++j )
+    gws = static_cast<double **>(std::malloc( numThreads * sizeof(double *) ));
+    if( !gws ) { vsapi->setError( out, "TNLMeans:  malloc failure (gws)!" ); return; }
+    for( int i = 0; i < numThreads; ++i )
     {
-        if( j < 0 )
-            m = std::min( j + By, 0 );
-        else
-            m = std::max( j - By, 0 );
-        for( int k = -Sx; k <= Sx; ++k )
+        double *gw = static_cast<double *>(AlignedMemory::alloc( Sxd * Syd * sizeof(double), 16 ));
+        if( !gw ) vsapi->setError( out, "TNLMeans:  malloc failure (gw)!" );
+        gws[i] = gw;
+        int w = 0, m, n;
+        for( int j = -Sy; j <= Sy; ++j )
         {
-            if( k < 0 )
-                n = std::min( k + Bx, 0 );
+            if( j < 0 )
+                m = std::min( j + By, 0 );
             else
-                n = std::max( k - Bx, 0 );
-            gw[w++] = std::exp( -((m * m + n * n) / (2 * a2)) );
+                m = std::max( j - By, 0 );
+            for( int k = -Sx; k <= Sx; ++k )
+            {
+                if( k < 0 )
+                    n = std::min( k + Bx, 0 );
+                else
+                    n = std::max( k - Bx, 0 );
+                gw[w++] = std::exp( -((m * m + n * n) / (2 * a2)) );
+            }
         }
     }
 }
 
 TNLMeans::~TNLMeans()
 {
-    if( fc ) delete fc;
-    if( gw )       AlignedMemory::free( gw );
-    if( sumsb )    AlignedMemory::free( sumsb );
-    if( weightsb ) AlignedMemory::free( weightsb );
-    if( ds )
+    if( fcs )
     {
-        AlignedMemory::free( ds->sums );
-        AlignedMemory::free( ds->weights );
-        AlignedMemory::free( ds->wmaxs );
-        delete ds;
+        for( int i = 0; i < numThreads; ++i )
+            delete fcs[i];
+        std::free( fcs );
+    }
+    if( gws )
+    {
+        for( int i = 0; i < numThreads; ++i )
+            AlignedMemory::free( gws[i] );
+        std::free( gws );
+    }
+    if( sumsbs )
+    {
+        for( int i = 0; i < numThreads; ++i )
+            AlignedMemory::free( sumsbs[i] );
+        std::free( sumsbs );
+    }
+    if( weightsbs )
+    {
+        for( int i = 0; i < numThreads; ++i )
+            AlignedMemory::free( weightsbs[i] );
+        std::free( weightsbs );
+    }
+    if( dss )
+    {
+        for( int i = 0; i < numThreads; ++i )
+        {
+            SDATA *ds = dss[i];
+            AlignedMemory::free( ds->sums );
+            AlignedMemory::free( ds->weights );
+            AlignedMemory::free( ds->wmaxs );
+            delete ds;
+        }
+        std::free( dss );
     }
 }
 
@@ -208,6 +257,9 @@ VSFrameRef *TNLMeans::GetFrame
     const VSAPI    *vsapi
 )
 {
+    int expected = numThreads;
+    threadPhase++;
+    threadPhase.compare_exchange_weak( expected, 0 );
     if( ssd )
         return GetFrameByMethod< 1 >( n, frame_ctx, core, vsapi );
     else
@@ -223,6 +275,8 @@ VSFrameRef *TNLMeans::GetFrameWZ
     const VSAPI    *vsapi
 )
 {
+    nlCache *fc = fcs[threadPhase];
+    double  *gw = gws[threadPhase];
     fc->resetCacheStart( n - Az, n + Az );
     for( int i = n - Az; i <= n + Az; ++i )
     {
@@ -370,6 +424,10 @@ VSFrameRef *TNLMeans::GetFrameWZB
     const VSAPI    *vsapi
 )
 {
+    nlCache *fc       = fcs      [threadPhase];
+    double  *sumsb    = sumsbs   [threadPhase];
+    double  *weightsb = weightsbs[threadPhase];
+    double  *gw       = gws      [threadPhase];
     fc->resetCacheStart( n - Az, n + Az );
     for( int i = n - Az; i <= n + Az; ++i )
     {
@@ -516,6 +574,8 @@ VSFrameRef *TNLMeans::GetFrameWOZ
         return nullptr;
     }
     const VSFrameRef *srcPF = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
+    SDATA  *ds = dss[threadPhase];
+    double *gw = gws[threadPhase];
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
         const unsigned char *srcp = vsapi->getReadPtr( srcPF, plane );
@@ -612,6 +672,9 @@ VSFrameRef *TNLMeans::GetFrameWOZB
         return nullptr;
     }
     const VSFrameRef *srcPF = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
+    double *sumsb    = sumsbs   [threadPhase];
+    double *weightsb = weightsbs[threadPhase];
+    double *gw       = gws      [threadPhase];
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
         const unsigned char *srcp = vsapi->getReadPtr( srcPF, plane );

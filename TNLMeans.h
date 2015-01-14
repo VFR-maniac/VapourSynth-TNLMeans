@@ -22,7 +22,8 @@
 **   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
-#include <cmath>        /* std::exp */
+#include <cmath>
+#include <atomic>
 
 struct SDATA
 {
@@ -59,18 +60,20 @@ public:
 class TNLMeans
 {
 private:
-    int      Ax, Ay, Az;
-    int      Sx, Sy;
-    int      Bx, By;
-    int      Sxd, Syd, Sxa;
-    int      Bxd, Byd, Bxa;
-    int      Axd, Ayd, Axa, Azdm1;
-    double   a, a2;
-    double   h, hin, h2in;
-    double  *sumsb, *weightsb, *gw;
-    bool     ssd;
-    nlCache *fc;
-    SDATA   *ds;
+    int       Ax, Ay, Az;
+    int       Sx, Sy;
+    int       Bx, By;
+    int       Sxd, Syd, Sxa;
+    int       Bxd, Byd, Bxa;
+    int       Axd, Ayd, Axa, Azdm1;
+    double    a, a2;
+    double    h, hin, h2in;
+    double  **sumsbs, **weightsbs, **gws;
+    bool      ssd;
+    nlCache **fcs;
+    SDATA   **dss;
+    int       numThreads;
+    std::atomic<int> threadPhase;
     int mapn( int n );
     inline double GetSSD( const unsigned char *s1, const unsigned char *s2, const double *gwT, const int k ) { return (s1[k] - s2[k]) * (s1[k] - s2[k]) * gwT[k]; };
     inline double GetSAD( const unsigned char *s1, const unsigned char *s2, const double *gwT, const int k ) { return std::abs( s1[k] - s2[k] ) * gwT[k]; };
@@ -97,6 +100,7 @@ public:
         double _a, double _h, bool ssd,
         const VSMap *in,
         VSMap       *out,
+        VSCore      *core,
         const VSAPI *vsapi
     );
     /* Desctructor */

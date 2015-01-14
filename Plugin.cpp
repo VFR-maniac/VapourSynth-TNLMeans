@@ -129,7 +129,7 @@ static void VS_CC createTNLMeans
     set_option_double( &h,   0.5, "h",   in, vsapi );
     set_option_int64 ( &ssd,   1, "ssd", in, vsapi );
 
-    TNLMeans *d = new TNLMeans( ax, ay, az, sx, sy, bx, by, a, h, ssd, in, out, vsapi );
+    TNLMeans *d = new TNLMeans( ax, ay, az, sx, sy, bx, by, a, h, ssd, in, out, core, vsapi );
     if( d == nullptr )
     {
         vsapi->setError( out, "TNLMeans: create failure (TNLMeans)!" );
@@ -143,7 +143,7 @@ static void VS_CC createTNLMeans
         initTNLMeans,
         getFrameTNLMeans,
         closeTNLMeans,
-        fmParallelRequests, 0, d, core
+        fmParallel, 0, d, core
     );
 }
 
