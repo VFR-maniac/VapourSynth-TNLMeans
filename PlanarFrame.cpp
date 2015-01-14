@@ -55,69 +55,48 @@ inline void PlanarFrame::BitBlt
 
 void PlanarFrame::copyFrom( const VSFrameRef *frame, const VSAPI *vsapi )
 {
-    if( !y || !u || !v ) return;
-    if( vsapi->getFrameFormat( frame )->id == pfYUV420P8 )
-    {
-        BitBlt( y, ypitch,
-                vsapi->getReadPtr   ( frame, 0 ), vsapi->getStride     ( frame, 0 ),
-                vsapi->getFrameWidth( frame, 0 ), vsapi->getFrameHeight( frame, 0 ) );
-        BitBlt( u, uvpitch,
-                vsapi->getReadPtr   ( frame, 1 ), vsapi->getStride     ( frame, 1 ),
-                vsapi->getFrameWidth( frame, 1 ), vsapi->getFrameHeight( frame, 1 ) );
-        BitBlt( v, uvpitch,
-                vsapi->getReadPtr   ( frame, 2 ), vsapi->getStride     ( frame, 2 ),
-                vsapi->getFrameWidth( frame, 2 ), vsapi->getFrameHeight( frame, 2 ) );
-    }
+    for( int i = 0; i < numPlanes; ++i )
+        if( data[i] )
+            BitBlt( data[i], stride[i],
+                    vsapi->getReadPtr   ( frame, i ), vsapi->getStride     ( frame, i ),
+                    vsapi->getFrameWidth( frame, i ), vsapi->getFrameHeight( frame, i ) );
 }
 
 void PlanarFrame::copyTo( VSFrameRef *frame, const VSAPI *vsapi )
 {
-    if( !y || !u || !v ) return;
-    if( vsapi->getFrameFormat( frame )->id == pfYUV420P8 )
-    {
-        BitBlt( vsapi->getWritePtr( frame, 0 ), vsapi->getStride( frame, 0 ), y,  ypitch,  ywidth,  yheight );
-        BitBlt( vsapi->getWritePtr( frame, 1 ), vsapi->getStride( frame, 1 ), u, uvpitch, uvwidth, uvheight );
-        BitBlt( vsapi->getWritePtr( frame, 2 ), vsapi->getStride( frame, 2 ), v, uvpitch, uvwidth, uvheight );
-    }
+    for( int i = 0; i < numPlanes; ++i )
+        if( data[i] )
+            BitBlt( vsapi->getWritePtr( frame, i ), vsapi->getStride( frame, i ),
+                    data[i], stride[i], width[i], height[i] );
 }
 
 unsigned char *PlanarFrame::GetPtr( int plane )
 {
-    if( plane == 0 ) return y;
-    if( plane == 1 ) return u;
-    return v;
+    return plane < numPlanes ? data[plane] : nullptr;
 }
 
 int PlanarFrame::GetWidth( int plane )
 {
-    if( plane == 0 )
-        return ywidth;
-    else
-        return uvwidth;
+    return plane < numPlanes ? width[plane] : 0;
 }
 
 int PlanarFrame::GetHeight( int plane )
 {
-    if( plane == 0 )
-        return yheight;
-    else
-        return uvheight;
+    return plane < numPlanes ? height[plane] : 0;
 }
 
 int PlanarFrame::GetPitch( int plane )
 {
-    if( plane == 0 )
-        return ypitch;
-    else
-        return uvpitch;
+    return plane < numPlanes ? stride[plane] : 0;
 }
 
 PlanarFrame::PlanarFrame( const VSVideoInfo &viInfo )
 {
-    ypitch = uvpitch = 0;
-    ywidth = uvwidth = 0;
-    yheight = uvheight = 0;
-    y = u = v = nullptr;
+    stride[0] = stride[1] = stride[2] = 0;
+    width [0] = width [1] = width [2] = 0;
+    height[0] = height[1] = height[2] = 0;
+    data  [0] = data  [1] = data  [2] = nullptr;
+    numPlanes = viInfo.format->numPlanes;
     allocSpace( viInfo );
 }
 
@@ -129,33 +108,21 @@ PlanarFrame::~PlanarFrame()
 bool PlanarFrame::allocSpace( const VSVideoInfo &viInfo )
 {
     freeSpace();
-    int height = viInfo.height;
-    int width  = viInfo.width;
-    if( viInfo.format->id == pfYUV420P8 )
+    for( int i = 0; i < numPlanes; ++i )
     {
         static const int min_alignment = 32;
-        ypitch  = width + ((width % min_alignment) == 0 ? 0 : min_alignment - (width % min_alignment));
-        ywidth  = width;
-        yheight = height;
-        width  >>= 1;
-        height >>= 1;
-        uvpitch  = width + ((width % min_alignment) == 0 ? 0 : min_alignment - (width % min_alignment));
-        uvwidth  = width;
-        uvheight = height;
-        y = static_cast<unsigned char *>(AlignedMemory::alloc(  ypitch * yheight,  min_alignment ));
-        if( !y ) return false;
-        u = static_cast<unsigned char *>(AlignedMemory::alloc( uvpitch * uvheight, min_alignment ));
-        if( !u ) return false;
-        v = static_cast<unsigned char *>(AlignedMemory::alloc( uvpitch * uvheight, min_alignment ));
-        if( !v ) return false;
-        return true;
+        width [i] = viInfo.width  >> (i ? viInfo.format->subSamplingW : 0);
+        height[i] = viInfo.height >> (i ? viInfo.format->subSamplingH : 0);
+        stride[i] = width[i] + ((width[i] % min_alignment) == 0 ? 0 : min_alignment - (width[i] % min_alignment));
+        data[i] = static_cast<unsigned char *>(AlignedMemory::alloc( stride[i] * height[i], min_alignment ));
+        if( !data[i] ) return false;
     }
-    return false;
+    return true;
 }
 
 void PlanarFrame::freeSpace()
 {
-    if( y ) { AlignedMemory::free( y ); y = nullptr; }
-    if( u ) { AlignedMemory::free( u ); u = nullptr; }
-    if( v ) { AlignedMemory::free( v ); v = nullptr; }
+    if( data[0] ) { AlignedMemory::free( data[0] ); data[0] = nullptr; }
+    if( data[1] ) { AlignedMemory::free( data[1] ); data[1] = nullptr; }
+    if( data[2] ) { AlignedMemory::free( data[2] ); data[2] = nullptr; }
 }

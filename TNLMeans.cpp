@@ -53,7 +53,8 @@ TNLMeans::TNLMeans
     gw = nullptr;
     weightsb = sumsb = nullptr;
     ds = nullptr;
-    if( vi.format->id != pfYUV420P8 ) { vsapi->setError( out, "TNLMeans:  only YUV 4:2:0 is supported!"); return; }
+    if( vi.format->colorFamily == cmCompat ) { vsapi->setError( out, "TNLMeans:  only planar formats are supported!"); return; }
+    if( vi.format->bitsPerSample != 8 )      { vsapi->setError( out, "TNLMeans:  only 8-bit formats are supported!"); return; }
     if( h <= 0.0 ) { vsapi->setError( out, "TNLMeans:  h must be greater than 0!" );               return; }
     if( a <= 0.0 ) { vsapi->setError( out, "TNLMeans:  a must be greater than 0!" );               return; }
     if( Ax < 0 )   { vsapi->setError( out, "TNLMeans:  ax must be greater than or equal to 0!" );  return; }
@@ -257,21 +258,21 @@ VSFrameRef *TNLMeans::GetFrameWZ
     PlanarFrame *srcPF = fc->frames[fc->getCachePos( Az )]->pf;
     const int startz = Az - std::min( n, Az );
     const int stopz  = Az + std::min( vi.numFrames - n - 1, Az );
-    for( int b = 0; b < 3; ++b )
+    for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const unsigned char *srcp = srcPF->GetPtr( b );
-        const unsigned char *pf2p = srcPF->GetPtr( b );
-        unsigned char *dstp = dstPF->GetPtr   ( b );
-        const int pitch     = dstPF->GetPitch ( b );
-        const int height    = dstPF->GetHeight( b );
-        const int width     = dstPF->GetWidth ( b );
+        const unsigned char *srcp = srcPF->GetPtr( plane );
+        const unsigned char *pf2p = srcPF->GetPtr( plane );
+        unsigned char *dstp = dstPF->GetPtr   ( plane );
+        const int pitch     = dstPF->GetPitch ( plane );
+        const int height    = dstPF->GetHeight( plane );
+        const int width     = dstPF->GetWidth ( plane );
         const int heightm1  = height - 1;
         const int widthm1   = width  - 1;
         for( int i = 0; i < fc->size; ++i )
         {
             const int pos = fc->getCachePos( i );
-            pfplut[i] = fc->frames[pos]->pf->GetPtr( b );
-            dslut [i] = fc->frames[pos]->ds[b];
+            pfplut[i] = fc->frames[pos]->pf->GetPtr( plane );
+            dslut [i] = fc->frames[pos]->ds[plane];
         }
         const SDATA *dds = dslut[Az];
         for( int y = 0; y < height; ++y )
@@ -389,20 +390,20 @@ VSFrameRef *TNLMeans::GetFrameWZB
     PlanarFrame *srcPF = fc->frames[fc->getCachePos( Az )]->pf;
     const int startz = Az - std::min( n, Az );
     const int stopz  = Az + std::min( vi.numFrames - n - 1, Az );
-    for( int b = 0; b < 3; ++b )
+    for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const unsigned char *srcp = srcPF->GetPtr( b );
-        const unsigned char *pf2p = srcPF->GetPtr( b );
-        unsigned char *dstp     = dstPF->GetPtr   ( b );
-        const int      pitch    = dstPF->GetPitch ( b );
-        const int      height   = dstPF->GetHeight( b );
-        const int      width    = dstPF->GetWidth ( b );
+        const unsigned char *srcp = srcPF->GetPtr( plane );
+        const unsigned char *pf2p = srcPF->GetPtr( plane );
+        unsigned char *dstp     = dstPF->GetPtr   ( plane );
+        const int      pitch    = dstPF->GetPitch ( plane );
+        const int      height   = dstPF->GetHeight( plane );
+        const int      width    = dstPF->GetWidth ( plane );
         const int      heightm1 = height - 1;
         const int      widthm1  = width  - 1;
         double *sumsb_saved    = sumsb    + Bx;
         double *weightsb_saved = weightsb + Bx;
         for( int i = 0; i < fc->size; ++i )
-            pfplut[i] = fc->frames[fc->getCachePos( i )]->pf->GetPtr( b );
+            pfplut[i] = fc->frames[fc->getCachePos( i )]->pf->GetPtr( plane );
         for( int y = By; y < height + By; y += Byd )
         {
             const int starty = std::max( y - Ay, By );
@@ -508,14 +509,14 @@ VSFrameRef *TNLMeans::GetFrameWOZ
     const VSFrameRef *frame = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
     srcPFr->copyFrom( frame, vsapi );
     vsapi->freeFrame( frame );
-    for( int b = 0; b < 3; ++b )
+    for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const unsigned char *srcp = srcPFr->GetPtr( b );
-        const unsigned char *pfp  = srcPFr->GetPtr( b );
-        unsigned char *dstp = dstPF->GetPtr   ( b );
-        const int pitch     = dstPF->GetPitch ( b );
-        const int height    = dstPF->GetHeight( b );
-        const int width     = dstPF->GetWidth ( b );
+        const unsigned char *srcp = srcPFr->GetPtr( plane );
+        const unsigned char *pfp  = srcPFr->GetPtr( plane );
+        unsigned char *dstp = dstPF->GetPtr   ( plane );
+        const int pitch     = dstPF->GetPitch ( plane );
+        const int height    = dstPF->GetHeight( plane );
+        const int width     = dstPF->GetWidth ( plane );
         const int heightm1  = height - 1;
         const int widthm1   = width  - 1;
         std::memset( ds->sums,    0, height * width * sizeof(double) );
@@ -599,14 +600,14 @@ VSFrameRef *TNLMeans::GetFrameWOZB
     const VSFrameRef *frame = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
     srcPFr->copyFrom( frame, vsapi );
     vsapi->freeFrame( frame );
-    for( int b = 0; b < 3; ++b )
+    for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const unsigned char *srcp = srcPFr->GetPtr( b );
-        const unsigned char *pfp  = srcPFr->GetPtr( b );
-        unsigned char *dstp = dstPF->GetPtr   ( b );
-        const int pitch     = dstPF->GetPitch ( b );
-        const int height    = dstPF->GetHeight( b );
-        const int width     = dstPF->GetWidth ( b );
+        const unsigned char *srcp = srcPFr->GetPtr( plane );
+        const unsigned char *pfp  = srcPFr->GetPtr( plane );
+        unsigned char *dstp = dstPF->GetPtr   ( plane );
+        const int pitch     = dstPF->GetPitch ( plane );
+        const int height    = dstPF->GetHeight( plane );
+        const int width     = dstPF->GetWidth ( plane );
         const int heightm1  = height - 1;
         const int widthm1   = width  - 1;
         double *sumsb_saved    = sumsb    + Bx;

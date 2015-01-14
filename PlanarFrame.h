@@ -24,10 +24,11 @@
 class PlanarFrame
 {
 private:
-    int ypitch,  uvpitch;
-    int ywidth,  uvwidth;
-    int yheight, uvheight;
-    unsigned char *y, *u, *v;
+    int numPlanes;
+    int stride[3];
+    int width [3];
+    int height[3];
+    unsigned char *data[3];
     bool allocSpace( const VSVideoInfo &viInfo );
     void freeSpace();
     inline void BitBlt( void *dstp, int dst_stride, const void *srcp, int src_stride, int row_size, int height );
