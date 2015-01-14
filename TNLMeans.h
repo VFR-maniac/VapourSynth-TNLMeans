@@ -23,7 +23,10 @@
 */
 
 #include <cmath>
+#include <cstring>
 #include <atomic>
+#include <algorithm>
+#include <limits>
 
 struct SDATA
 {
@@ -106,3 +109,11 @@ public:
     /* Desctructor */
     ~TNLMeans();
 };
+
+static inline void fill_zero_d( double *x, size_t n )
+{
+    if( std::numeric_limits<double>::is_iec559 )
+        std::memset( x, 0, n * sizeof(double) );
+    else
+        std::fill_n( x, n, 0.0 );
+}

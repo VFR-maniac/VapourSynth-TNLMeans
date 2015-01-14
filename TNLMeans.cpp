@@ -26,10 +26,7 @@
 #include "AlignedMemory.h"
 #include "TNLMeans.h"
 
-#include <algorithm>
 #include <cstdlib>
-#include <cstring>
-#include <limits>
 
 TNLMeans::TNLMeans
 (
@@ -472,8 +469,8 @@ VSFrameRef *TNLMeans::GetFrameWZB
             const int yTr    = std::min( Byd, height - y + By );
             for( int x = Bx; x < width + Bx; x += Bxd )
             {
-                std::memset( sumsb,    0, Bxa * sizeof(double) );
-                std::memset( weightsb, 0, Bxa * sizeof(double) );
+                fill_zero_d( sumsb,    Bxa );
+                fill_zero_d( weightsb, Bxa );
                 double wmax = 0.0;
                 const int startx = std::max( x - Ax, Bx );
                 const int stopx  = std::min( x + Ax, widthm1 - std::min( Bx, widthm1 - x ) );
@@ -586,9 +583,9 @@ VSFrameRef *TNLMeans::GetFrameWOZ
         const int width     = vsapi->getFrameWidth ( dstPF, plane );
         const int heightm1  = height - 1;
         const int widthm1   = width  - 1;
-        std::memset( ds->sums,    0, height * width * sizeof(double) );
-        std::memset( ds->weights, 0, height * width * sizeof(double) );
-        std::memset( ds->wmaxs,   0, height * width * sizeof(double) );
+        fill_zero_d( ds->sums,    height * width );
+        fill_zero_d( ds->weights, height * width );
+        fill_zero_d( ds->wmaxs,   height * width );
         for( int y = 0; y < height; ++y )
         {
             const int stopy = std::min( y + Ay, heightm1 );
@@ -694,8 +691,8 @@ VSFrameRef *TNLMeans::GetFrameWOZB
             const int yTr    = std::min( Byd, height - y + By );
             for( int x = Bx; x < width + Bx; x += Bxd )
             {
-                std::memset( sumsb,    0, Bxa * sizeof(double) );
-                std::memset( weightsb, 0, Bxa * sizeof(double) );
+                fill_zero_d( sumsb,    Bxa );
+                fill_zero_d( weightsb, Bxa );
                 double wmax = 0.0;
                 const int startx = std::max( x - Ax, Bx );
                 const int stopx  = std::min( x + Ax, widthm1 - std::min( Bx, widthm1 - x ) );
@@ -872,10 +869,10 @@ void nlCache::clearDS( nlFrame *nl )
 {
     for( int i = 0; i < 3; ++i )
     {
-        const size_t mem_size = nl->vsapi->getFrameWidth( nl->pf, i ) * nl->vsapi->getFrameHeight( nl->pf, i ) * sizeof(double);
-        std::memset( nl->ds[i]->sums,    0, mem_size );
-        std::memset( nl->ds[i]->weights, 0, mem_size );
-        std::memset( nl->ds[i]->wmaxs,   0, mem_size );
+        const size_t res = nl->vsapi->getFrameWidth( nl->pf, i ) * nl->vsapi->getFrameHeight( nl->pf, i );
+        fill_zero_d( nl->ds[i]->sums,    res );
+        fill_zero_d( nl->ds[i]->weights, res );
+        fill_zero_d( nl->ds[i]->wmaxs,   res );
     }
     for( int i = 0; i < size; ++i ) nl->dsa[i] = 0;
 }
