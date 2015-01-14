@@ -24,7 +24,6 @@
 
 #include "VapourSynth.h"
 #include "AlignedMemory.h"
-#include "PlanarFrame.h"
 #include "TNLMeans.h"
 
 #include <algorithm>
@@ -49,7 +48,6 @@ TNLMeans::TNLMeans
     node =  vsapi->propGetNode( in, "clip", 0, 0 );
     vi   = *vsapi->getVideoInfo( node );
     fc = nullptr;
-    dstPF = nullptr;
     gw = nullptr;
     weightsb = sumsb = nullptr;
     ds = nullptr;
@@ -79,7 +77,6 @@ TNLMeans::TNLMeans
     Axa = Axd * Ayd;
     Azdm1 = Az * 2;
     a2 = a * a;
-    dstPF = new PlanarFrame( vi );
 
     if( Az ) fc = new nlCache( Az * 2 + 1, (Bx > 0 || By > 0), vi, vsapi );
 
@@ -133,8 +130,7 @@ TNLMeans::TNLMeans
 
 TNLMeans::~TNLMeans()
 {
-    if( fc )    delete fc;
-    if( dstPF ) delete dstPF;
+    if( fc ) delete fc;
     if( gw )       AlignedMemory::free( gw );
     if( sumsb )    AlignedMemory::free( sumsb );
     if( weightsb ) AlignedMemory::free( weightsb );
@@ -159,7 +155,7 @@ void TNLMeans::RequestFrame
         vsapi->requestFrameFilter( mapn( i ), node, frame_ctx );
 }
 
-VSFrameRef *TNLMeans::CopyTo
+VSFrameRef *TNLMeans::newVideoFrame
 (
     int             n,
     VSFrameContext *frame_ctx,
@@ -176,7 +172,6 @@ VSFrameRef *TNLMeans::CopyTo
         src, core
     );
     vsapi->freeFrame( src );
-    dstPF->copyTo( dst, vsapi );
     return dst;
 }
 
@@ -240,6 +235,12 @@ VSFrameRef *TNLMeans::GetFrameWZ
             fc->clearDS( nl );
         }
     }
+    VSFrameRef *dstPF = newVideoFrame( n, frame_ctx, core, vsapi );
+    if( !dstPF )
+    {
+        vsapi->setFilterError( "TNLMeans:  frame allocation failure (dstPF)!", frame_ctx );
+        return nullptr;
+    }
     const unsigned char **pfplut =
         static_cast<const unsigned char **>(AlignedMemory::alloc( fc->size * sizeof(const unsigned char *), 16 ));
     if( !pfplut ) { vsapi->setFilterError( "TNLMeans:  malloc failure (pfplut)!", frame_ctx ); return nullptr; }
@@ -259,10 +260,10 @@ VSFrameRef *TNLMeans::GetFrameWZ
     {
         const unsigned char *srcp = vsapi->getReadPtr( srcPF, plane );
         const unsigned char *pf2p = vsapi->getReadPtr( srcPF, plane );
-        unsigned char *dstp = dstPF->GetPtr   ( plane );
-        const int pitch     = dstPF->GetPitch ( plane );
-        const int height    = dstPF->GetHeight( plane );
-        const int width     = dstPF->GetWidth ( plane );
+        unsigned char *dstp = vsapi->getWritePtr   ( dstPF, plane );
+        const int pitch     = vsapi->getStride     ( dstPF, plane );
+        const int height    = vsapi->getFrameHeight( dstPF, plane );
+        const int width     = vsapi->getFrameWidth ( dstPF, plane );
         const int heightm1  = height - 1;
         const int widthm1   = width  - 1;
         for( int i = 0; i < fc->size; ++i )
@@ -357,7 +358,7 @@ VSFrameRef *TNLMeans::GetFrameWZ
     AlignedMemory::free( dsalut );
     AlignedMemory::free( dslut );
     AlignedMemory::free( pfplut );
-    return CopyTo( n, frame_ctx, core, vsapi );
+    return dstPF;
 }
 
 template < int ssd >
@@ -383,6 +384,12 @@ VSFrameRef *TNLMeans::GetFrameWZB
     const unsigned char **pfplut =
         static_cast<const unsigned char **>(AlignedMemory::alloc( fc->size * sizeof(const unsigned char *), 16 ));
     if( !pfplut ) { vsapi->setFilterError( "TNLMeans:  malloc failure (pfplut)!", frame_ctx ); return nullptr; }
+    VSFrameRef *dstPF = newVideoFrame( n, frame_ctx, core, vsapi );
+    if( !dstPF )
+    {
+        vsapi->setFilterError( "TNLMeans:  frame allocation failure (dstPF)!", frame_ctx );
+        return nullptr;
+    }
     const VSFrameRef *srcPF = fc->frames[fc->getCachePos( Az )]->pf;
     const int startz = Az - std::min( n, Az );
     const int stopz  = Az + std::min( vi.numFrames - n - 1, Az );
@@ -390,10 +397,10 @@ VSFrameRef *TNLMeans::GetFrameWZB
     {
         const unsigned char *srcp = vsapi->getReadPtr( srcPF, plane );
         const unsigned char *pf2p = vsapi->getReadPtr( srcPF, plane );
-        unsigned char *dstp     = dstPF->GetPtr   ( plane );
-        const int      pitch    = dstPF->GetPitch ( plane );
-        const int      height   = dstPF->GetHeight( plane );
-        const int      width    = dstPF->GetWidth ( plane );
+        unsigned char *dstp = vsapi->getWritePtr   ( dstPF, plane );
+        const int pitch     = vsapi->getStride     ( dstPF, plane );
+        const int height    = vsapi->getFrameHeight( dstPF, plane );
+        const int width     = vsapi->getFrameWidth ( dstPF, plane );
         const int      heightm1 = height - 1;
         const int      widthm1  = width  - 1;
         double *sumsb_saved    = sumsb    + Bx;
@@ -490,7 +497,7 @@ VSFrameRef *TNLMeans::GetFrameWZB
         }
     }
     AlignedMemory::free( pfplut );
-    return CopyTo( n, frame_ctx, core, vsapi );
+    return dstPF;
 }
 
 template < int ssd >
@@ -502,15 +509,21 @@ VSFrameRef *TNLMeans::GetFrameWOZ
     const VSAPI    *vsapi
 )
 {
-    const VSFrameRef *frame = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
+    VSFrameRef *dstPF = newVideoFrame( n, frame_ctx, core, vsapi );
+    if( !dstPF )
+    {
+        vsapi->setFilterError( "TNLMeans:  frame allocation failure (dstPF)!", frame_ctx );
+        return nullptr;
+    }
+    const VSFrameRef *srcPF = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const unsigned char *srcp = vsapi->getReadPtr( frame, plane );
-        const unsigned char *pfp  = vsapi->getReadPtr( frame, plane );
-        unsigned char *dstp = dstPF->GetPtr   ( plane );
-        const int pitch     = dstPF->GetPitch ( plane );
-        const int height    = dstPF->GetHeight( plane );
-        const int width     = dstPF->GetWidth ( plane );
+        const unsigned char *srcp = vsapi->getReadPtr( srcPF, plane );
+        const unsigned char *pfp  = vsapi->getReadPtr( srcPF, plane );
+        unsigned char *dstp = vsapi->getWritePtr   ( dstPF, plane );
+        const int pitch     = vsapi->getStride     ( dstPF, plane );
+        const int height    = vsapi->getFrameHeight( dstPF, plane );
+        const int width     = vsapi->getFrameWidth ( dstPF, plane );
         const int heightm1  = height - 1;
         const int widthm1   = width  - 1;
         std::memset( ds->sums,    0, height * width * sizeof(double) );
@@ -579,8 +592,8 @@ VSFrameRef *TNLMeans::GetFrameWOZ
             srcp += pitch;
         }
     }
-    vsapi->freeFrame( frame );
-    return CopyTo( n, frame_ctx, core, vsapi );
+    vsapi->freeFrame( srcPF );
+    return dstPF;
 }
 
 template < int ssd >
@@ -592,15 +605,21 @@ VSFrameRef *TNLMeans::GetFrameWOZB
     const VSAPI    *vsapi
 )
 {
-    const VSFrameRef *frame = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
+    VSFrameRef *dstPF = newVideoFrame( n, frame_ctx, core, vsapi );
+    if( !dstPF )
+    {
+        vsapi->setFilterError( "TNLMeans:  frame allocation failure (dstPF)!", frame_ctx );
+        return nullptr;
+    }
+    const VSFrameRef *srcPF = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const unsigned char *srcp = vsapi->getReadPtr( frame, plane );
-        const unsigned char *pfp  = vsapi->getReadPtr( frame, plane );
-        unsigned char *dstp = dstPF->GetPtr   ( plane );
-        const int pitch     = dstPF->GetPitch ( plane );
-        const int height    = dstPF->GetHeight( plane );
-        const int width     = dstPF->GetWidth ( plane );
+        const unsigned char *srcp = vsapi->getReadPtr( srcPF, plane );
+        const unsigned char *pfp  = vsapi->getReadPtr( srcPF, plane );
+        unsigned char *dstp = vsapi->getWritePtr   ( dstPF, plane );
+        const int pitch     = vsapi->getStride     ( dstPF, plane );
+        const int height    = vsapi->getFrameHeight( dstPF, plane );
+        const int width     = vsapi->getFrameWidth ( dstPF, plane );
         const int heightm1  = height - 1;
         const int widthm1   = width  - 1;
         double *sumsb_saved    = sumsb    + Bx;
@@ -689,8 +708,8 @@ VSFrameRef *TNLMeans::GetFrameWOZB
             srcp += pitch*Byd;
         }
     }
-    vsapi->freeFrame( frame );
-    return CopyTo( n, frame_ctx, core, vsapi );
+    vsapi->freeFrame( srcPF );
+    return dstPF;
 }
 
 int TNLMeans::mapn( int n )

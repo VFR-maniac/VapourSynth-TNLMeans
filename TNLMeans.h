@@ -59,25 +59,24 @@ public:
 class TNLMeans
 {
 private:
-    int                Ax, Ay, Az;
-    int                Sx, Sy;
-    int                Bx, By;
-    int                Sxd, Syd, Sxa;
-    int                Bxd, Byd, Bxa;
-    int                Axd, Ayd, Axa, Azdm1;
-    double             a, a2;
-    double             h, hin, h2in;
-    double            *sumsb, *weightsb, *gw;
-    bool               ssd;
-    nlCache           *fc;
-    SDATA             *ds;
-    PlanarFrame       *dstPF;
+    int      Ax, Ay, Az;
+    int      Sx, Sy;
+    int      Bx, By;
+    int      Sxd, Syd, Sxa;
+    int      Bxd, Byd, Bxa;
+    int      Axd, Ayd, Axa, Azdm1;
+    double   a, a2;
+    double   h, hin, h2in;
+    double  *sumsb, *weightsb, *gw;
+    bool     ssd;
+    nlCache *fc;
+    SDATA   *ds;
     int mapn( int n );
     inline double GetSSD( const unsigned char *s1, const unsigned char *s2, const double *gwT, const int k ) { return (s1[k] - s2[k]) * (s1[k] - s2[k]) * gwT[k]; };
     inline double GetSAD( const unsigned char *s1, const unsigned char *s2, const double *gwT, const int k ) { return std::abs( s1[k] - s2[k] ) * gwT[k]; };
     inline double GetSSDWeight( const double diff, const double gweights ) { return std::exp( (diff / gweights) * h2in ); };
     inline double GetSADWeight( const double diff, const double gweights ) { return std::exp( (diff / gweights) * hin ); };
-    VSFrameRef *CopyTo          ( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
+    VSFrameRef *newVideoFrame( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
     template < int ssd > VSFrameRef *GetFrameByMethod( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
     template < int ssd > VSFrameRef *GetFrameWZ      ( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
     template < int ssd > VSFrameRef *GetFrameWZB     ( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );

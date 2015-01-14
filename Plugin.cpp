@@ -20,7 +20,6 @@
 
 #include "config.h"
 #include "VapourSynth.h"
-#include "PlanarFrame.h"
 #include "TNLMeans.h"
 
 static inline void set_option_int64
