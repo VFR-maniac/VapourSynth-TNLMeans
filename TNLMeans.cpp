@@ -45,8 +45,7 @@ TNLMeans::TNLMeans
 {
     node =  vsapi->propGetNode( in, "clip", 0, 0 );
     vi   = *vsapi->getVideoInfo( node );
-    threadPhase = 0;
-    numThreads  = vsapi->getCoreInfo( core )->numThreads;
+    numThreads = vsapi->getCoreInfo( core )->numThreads;
     if( vi.format->colorFamily == cmCompat ) { vsapi->setError( out, "TNLMeans:  only planar formats are supported!"); return; }
     if( vi.format->bitsPerSample != 8 )      { vsapi->setError( out, "TNLMeans:  only 8-bit formats are supported!"); return; }
     if( h <= 0.0 ) { vsapi->setError( out, "TNLMeans:  h must be greater than 0!" );               return; }
@@ -218,15 +217,27 @@ VSFrameRef *TNLMeans::GetFrame
     const VSAPI    *vsapi
 )
 {
-    mtx.lock();
-    const int curr = threadPhase;
-    threadPhase = (threadPhase + 1) % numThreads;
-    mtx.unlock();
+    int threadId = -1;
+    do
+    {
+        std::lock_guard< std::mutex > lock( mtx );
+        for( int i = 0; i < numThreads; ++i )
+            if( !threads[i].active )
+            {
+                threads[i].active = 1;
+                threadId = i;
+                break;
+            }
+    } while( threadId == -1 );
 
+    VSFrameRef *dst;
     if( ssd )
-        return GetFrameByMethod< 1 >( n, curr, frame_ctx, core, vsapi );
+        dst = GetFrameByMethod< 1 >( n, threadId, frame_ctx, core, vsapi );
     else
-        return GetFrameByMethod< 0 >( n, curr, frame_ctx, core, vsapi );
+        dst = GetFrameByMethod< 0 >( n, threadId, frame_ctx, core, vsapi );
+
+    threads[threadId].active = 0;
+    return dst;
 }
 
 template < int ssd >

@@ -69,6 +69,7 @@ public:
 
 struct nlThread
 {
+    int      active;
     double  *sumsb, *weightsb, *gw;
     nlCache *fc;
     SDATA   *ds;
@@ -87,7 +88,6 @@ private:
     double    h, hin, h2in;
     bool      ssd;
     int       numThreads;
-    int       threadPhase;
     nlThread *threads;
     std::mutex mtx;
     int mapn( int n );
