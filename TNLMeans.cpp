@@ -49,7 +49,7 @@ TNLMeans::TNLMeans
     node =  vsapi->propGetNode( in, "clip", 0, 0 );
     vi   = *vsapi->getVideoInfo( node );
     fc = nullptr;
-    dstPF = srcPFr = nullptr;
+    dstPF = nullptr;
     gw = nullptr;
     weightsb = sumsb = nullptr;
     ds = nullptr;
@@ -82,7 +82,6 @@ TNLMeans::TNLMeans
     dstPF = new PlanarFrame( vi );
 
     if( Az ) fc = new nlCache( Az * 2 + 1, (Bx > 0 || By > 0), vi );
-    else srcPFr = new PlanarFrame( vi );
 
     if( Bx || By )
     {
@@ -134,9 +133,8 @@ TNLMeans::TNLMeans
 
 TNLMeans::~TNLMeans()
 {
-    if( fc )     delete fc;
-    if( dstPF )  delete dstPF;
-    if( srcPFr ) delete srcPFr;
+    if( fc )    delete fc;
+    if( dstPF ) delete dstPF;
     if( gw )       AlignedMemory::free( gw );
     if( sumsb )    AlignedMemory::free( sumsb );
     if( weightsb ) AlignedMemory::free( weightsb );
@@ -507,12 +505,10 @@ VSFrameRef *TNLMeans::GetFrameWOZ
 )
 {
     const VSFrameRef *frame = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
-    srcPFr->copyFrom( frame, vsapi );
-    vsapi->freeFrame( frame );
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const unsigned char *srcp = srcPFr->GetPtr( plane );
-        const unsigned char *pfp  = srcPFr->GetPtr( plane );
+        const unsigned char *srcp = vsapi->getReadPtr( frame, plane );
+        const unsigned char *pfp  = vsapi->getReadPtr( frame, plane );
         unsigned char *dstp = dstPF->GetPtr   ( plane );
         const int pitch     = dstPF->GetPitch ( plane );
         const int height    = dstPF->GetHeight( plane );
@@ -585,6 +581,7 @@ VSFrameRef *TNLMeans::GetFrameWOZ
             srcp += pitch;
         }
     }
+    vsapi->freeFrame( frame );
     return CopyTo( n, frame_ctx, core, vsapi );
 }
 
@@ -598,12 +595,10 @@ VSFrameRef *TNLMeans::GetFrameWOZB
 )
 {
     const VSFrameRef *frame = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
-    srcPFr->copyFrom( frame, vsapi );
-    vsapi->freeFrame( frame );
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const unsigned char *srcp = srcPFr->GetPtr( plane );
-        const unsigned char *pfp  = srcPFr->GetPtr( plane );
+        const unsigned char *srcp = vsapi->getReadPtr( frame, plane );
+        const unsigned char *pfp  = vsapi->getReadPtr( frame, plane );
         unsigned char *dstp = dstPF->GetPtr   ( plane );
         const int pitch     = dstPF->GetPitch ( plane );
         const int height    = dstPF->GetHeight( plane );
@@ -696,6 +691,7 @@ VSFrameRef *TNLMeans::GetFrameWOZB
             srcp += pitch*Byd;
         }
     }
+    vsapi->freeFrame( frame );
     return CopyTo( n, frame_ctx, core, vsapi );
 }
 

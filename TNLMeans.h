@@ -70,7 +70,7 @@ private:
     bool               ssd;
     nlCache           *fc;
     SDATA             *ds;
-    PlanarFrame       *dstPF, *srcPFr;
+    PlanarFrame       *dstPF;
     int mapn( int n );
     inline double GetSSD( const unsigned char *s1, const unsigned char *s2, const double *gwT, const int k ) { return (s1[k] - s2[k]) * (s1[k] - s2[k]) * gwT[k]; };
     inline double GetSAD( const unsigned char *s1, const unsigned char *s2, const double *gwT, const int k ) { return std::abs( s1[k] - s2[k] ) * gwT[k]; };
