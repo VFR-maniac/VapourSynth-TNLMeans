@@ -81,7 +81,7 @@ TNLMeans::TNLMeans
     a2 = a * a;
     dstPF = new PlanarFrame( vi );
 
-    if( Az ) fc = new nlCache( Az * 2 + 1, (Bx > 0 || By > 0), vi );
+    if( Az ) fc = new nlCache( Az * 2 + 1, (Bx > 0 || By > 0), vi, vsapi );
 
     if( Bx || By )
     {
@@ -234,11 +234,10 @@ VSFrameRef *TNLMeans::GetFrameWZ
         nlFrame *nl = fc->frames[fc->getCachePos( i - n + Az )];
         if( nl->fnum != i )
         {
-            const VSFrameRef *frame = vsapi->getFrameFilter( mapn( i ), node, frame_ctx );
-            nl->pf->copyFrom( frame, vsapi );
+            vsapi->freeFrame( nl->pf );
+            nl->pf = vsapi->getFrameFilter( mapn( i ), node, frame_ctx );
             nl->setFNum( i );
             fc->clearDS( nl );
-            vsapi->freeFrame( frame );
         }
     }
     const unsigned char **pfplut =
@@ -253,13 +252,13 @@ VSFrameRef *TNLMeans::GetFrameWZ
     for( int i = 0; i < fc->size; ++i )
         dsalut[i] = fc->frames[fc->getCachePos( i )]->dsa;
     int *ddsa = dsalut[Az];
-    PlanarFrame *srcPF = fc->frames[fc->getCachePos( Az )]->pf;
+    const VSFrameRef *srcPF = fc->frames[fc->getCachePos( Az )]->pf;
     const int startz = Az - std::min( n, Az );
     const int stopz  = Az + std::min( vi.numFrames - n - 1, Az );
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const unsigned char *srcp = srcPF->GetPtr( plane );
-        const unsigned char *pf2p = srcPF->GetPtr( plane );
+        const unsigned char *srcp = vsapi->getReadPtr( srcPF, plane );
+        const unsigned char *pf2p = vsapi->getReadPtr( srcPF, plane );
         unsigned char *dstp = dstPF->GetPtr   ( plane );
         const int pitch     = dstPF->GetPitch ( plane );
         const int height    = dstPF->GetHeight( plane );
@@ -269,7 +268,7 @@ VSFrameRef *TNLMeans::GetFrameWZ
         for( int i = 0; i < fc->size; ++i )
         {
             const int pos = fc->getCachePos( i );
-            pfplut[i] = fc->frames[pos]->pf->GetPtr( plane );
+            pfplut[i] = vsapi->getReadPtr( fc->frames[pos]->pf, plane );
             dslut [i] = fc->frames[pos]->ds[plane];
         }
         const SDATA *dds = dslut[Az];
@@ -376,22 +375,21 @@ VSFrameRef *TNLMeans::GetFrameWZB
         nlFrame *nl = fc->frames[fc->getCachePos( i - n + Az )];
         if( nl->fnum != i )
         {
-            const VSFrameRef *frame = vsapi->getFrameFilter( mapn( i ), node, frame_ctx );
-            nl->pf->copyFrom( frame, vsapi );
+            vsapi->freeFrame( nl->pf );
+            nl->pf = vsapi->getFrameFilter( mapn( i ), node, frame_ctx );
             nl->setFNum( i );
-            vsapi->freeFrame( frame );
         }
     }
     const unsigned char **pfplut =
         static_cast<const unsigned char **>(AlignedMemory::alloc( fc->size * sizeof(const unsigned char *), 16 ));
     if( !pfplut ) { vsapi->setFilterError( "TNLMeans:  malloc failure (pfplut)!", frame_ctx ); return nullptr; }
-    PlanarFrame *srcPF = fc->frames[fc->getCachePos( Az )]->pf;
+    const VSFrameRef *srcPF = fc->frames[fc->getCachePos( Az )]->pf;
     const int startz = Az - std::min( n, Az );
     const int stopz  = Az + std::min( vi.numFrames - n - 1, Az );
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const unsigned char *srcp = srcPF->GetPtr( plane );
-        const unsigned char *pf2p = srcPF->GetPtr( plane );
+        const unsigned char *srcp = vsapi->getReadPtr( srcPF, plane );
+        const unsigned char *pf2p = vsapi->getReadPtr( srcPF, plane );
         unsigned char *dstp     = dstPF->GetPtr   ( plane );
         const int      pitch    = dstPF->GetPitch ( plane );
         const int      height   = dstPF->GetHeight( plane );
@@ -401,7 +399,7 @@ VSFrameRef *TNLMeans::GetFrameWZB
         double *sumsb_saved    = sumsb    + Bx;
         double *weightsb_saved = weightsb + Bx;
         for( int i = 0; i < fc->size; ++i )
-            pfplut[i] = fc->frames[fc->getCachePos( i )]->pf->GetPtr( plane );
+            pfplut[i] = vsapi->getReadPtr( fc->frames[fc->getCachePos( i )]->pf, plane );
         for( int y = By; y < height + By; y += Byd )
         {
             const int starty = std::max( y - Ay, By );
@@ -702,10 +700,11 @@ int TNLMeans::mapn( int n )
     return n;
 }
 
-nlFrame::nlFrame( bool _useblocks, int _size, const VSVideoInfo &vi )
+nlFrame::nlFrame( bool _useblocks, int _size, const VSVideoInfo &vi, const VSAPI *_vsapi )
 {
+    vsapi = _vsapi;
     fnum = -20;
-    pf   = new PlanarFrame( vi );
+    pf   = nullptr;
     ds   = nullptr;
     dsa  = nullptr;
     if( !_useblocks )
@@ -713,10 +712,11 @@ nlFrame::nlFrame( bool _useblocks, int _size, const VSVideoInfo &vi )
         ds = static_cast<SDATA **>(std::malloc( 3 * sizeof(SDATA *) ));
         for( int i = 0; i < 3; ++i )
         {
+            const size_t mem_size = vsapi->getFrameWidth( pf, i ) * vsapi->getFrameHeight( pf, i ) * sizeof(double);
             ds[i] = new SDATA();
-            ds[i]->sums    = static_cast<double *>(AlignedMemory::alloc( pf->GetHeight( i ) * pf->GetWidth( i ) * sizeof(double), 16 ));
-            ds[i]->weights = static_cast<double *>(AlignedMemory::alloc( pf->GetHeight( i ) * pf->GetWidth( i ) * sizeof(double), 16 ));
-            ds[i]->wmaxs   = static_cast<double *>(AlignedMemory::alloc( pf->GetHeight( i ) * pf->GetWidth( i ) * sizeof(double), 16 ));
+            ds[i]->sums    = static_cast<double *>(AlignedMemory::alloc( mem_size, 16 ));
+            ds[i]->weights = static_cast<double *>(AlignedMemory::alloc( mem_size, 16 ));
+            ds[i]->wmaxs   = static_cast<double *>(AlignedMemory::alloc( mem_size, 16 ));
         }
         dsa = static_cast<int *>(std::malloc( _size * sizeof(int) ));
         for( int i = 0; i < _size; ++i ) dsa[i] = 0;
@@ -725,7 +725,8 @@ nlFrame::nlFrame( bool _useblocks, int _size, const VSVideoInfo &vi )
 
 nlFrame::~nlFrame()
 {
-    if( pf ) delete pf;
+    if( pf )
+        vsapi->freeFrame( pf );
     if( ds )
     {
         for( int i = 0; i < 3; ++i )
@@ -745,7 +746,7 @@ void nlFrame::setFNum( int i )
     fnum = i;
 }
 
-nlCache::nlCache( int _size, bool _useblocks, const VSVideoInfo &vi )
+nlCache::nlCache( int _size, bool _useblocks, const VSVideoInfo &vi, const VSAPI *vsapi )
 {
     frames = nullptr;
     start_pos = size = -20;
@@ -756,7 +757,7 @@ nlCache::nlCache( int _size, bool _useblocks, const VSVideoInfo &vi )
         frames = static_cast<nlFrame **>(std::malloc( size * sizeof(nlFrame *) ));
         std::memset( frames, 0, size * sizeof(nlFrame *) );
         for( int i = 0; i < size; ++i )
-            frames[i] = new nlFrame( _useblocks, _size, vi );
+            frames[i] = new nlFrame( _useblocks, _size, vi, vsapi );
     }
 }
 
@@ -789,9 +790,10 @@ void nlCache::clearDS( nlFrame *nl )
 {
     for( int i = 0; i < 3; ++i )
     {
-        std::memset( nl->ds[i]->sums,    0, nl->pf->GetHeight( i ) * nl->pf->GetWidth( i ) * sizeof(double) );
-        std::memset( nl->ds[i]->weights, 0, nl->pf->GetHeight( i ) * nl->pf->GetWidth( i ) * sizeof(double) );
-        std::memset( nl->ds[i]->wmaxs,   0, nl->pf->GetHeight( i ) * nl->pf->GetWidth( i ) * sizeof(double) );
+        const size_t mem_size = nl->vsapi->getFrameWidth( nl->pf, i ) * nl->vsapi->getFrameHeight( nl->pf, i ) * sizeof(double);
+        std::memset( nl->ds[i]->sums,    0, mem_size );
+        std::memset( nl->ds[i]->weights, 0, mem_size );
+        std::memset( nl->ds[i]->wmaxs,   0, mem_size );
     }
     for( int i = 0; i < size; ++i ) nl->dsa[i] = 0;
 }

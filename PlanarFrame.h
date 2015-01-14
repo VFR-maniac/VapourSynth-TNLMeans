@@ -34,7 +34,6 @@ private:
     inline void BitBlt( void *dstp, int dst_stride, const void *srcp, int src_stride, int row_size, int height );
 
 public:
-    void copyFrom( const VSFrameRef *frame, const VSAPI *vsapi );
     void copyTo( VSFrameRef *frame, const VSAPI *vsapi );
     unsigned char * GetPtr   ( int plane );
     int             GetWidth ( int plane );

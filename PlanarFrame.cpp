@@ -53,15 +53,6 @@ inline void PlanarFrame::BitBlt
     }
 }
 
-void PlanarFrame::copyFrom( const VSFrameRef *frame, const VSAPI *vsapi )
-{
-    for( int i = 0; i < numPlanes; ++i )
-        if( data[i] )
-            BitBlt( data[i], stride[i],
-                    vsapi->getReadPtr   ( frame, i ), vsapi->getStride     ( frame, i ),
-                    vsapi->getFrameWidth( frame, i ), vsapi->getFrameHeight( frame, i ) );
-}
-
 void PlanarFrame::copyTo( VSFrameRef *frame, const VSAPI *vsapi )
 {
     for( int i = 0; i < numPlanes; ++i )

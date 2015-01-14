@@ -34,11 +34,12 @@ struct SDATA
 class nlFrame
 {
 public:
-    int          fnum;
-    PlanarFrame *pf;
-    SDATA      **ds;
-    int         *dsa;
-    nlFrame( bool _useblocks, int _size, const VSVideoInfo &vi );
+    int               fnum;
+    const VSAPI      *vsapi;
+    const VSFrameRef *pf;
+    SDATA           **ds;
+    int              *dsa;
+    nlFrame( bool _useblocks, int _size, const VSVideoInfo &vi, const VSAPI *_vsapi );
     ~nlFrame();
     void setFNum( int i );
 };
@@ -48,7 +49,7 @@ class nlCache
 public:
     nlFrame **frames;
     int start_pos, size;
-    nlCache( int _size, bool _useblocks, const VSVideoInfo &vi );
+    nlCache( int _size, bool _useblocks, const VSVideoInfo &vi, const VSAPI *vsapi );
     ~nlCache();
     void resetCacheStart( int first, int last );
     int  getCachePos    ( int n );
