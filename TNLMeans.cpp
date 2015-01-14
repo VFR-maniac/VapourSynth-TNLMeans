@@ -218,17 +218,10 @@ VSFrameRef *TNLMeans::GetFrame
     const VSAPI    *vsapi
 )
 {
-    const int curr = (threadPhase.load() + 1) % numThreads;
-    if( numThreads > 1 )
-    {
-        int expected = numThreads;
-        threadPhase++;
-        threadPhase.compare_exchange_weak( expected, 0 );
-        do
-        {
-            expected = curr;
-        } while( !threadPhase.compare_exchange_weak( expected, curr ) );
-    }
+    mtx.lock();
+    const int curr = threadPhase;
+    threadPhase = (threadPhase + 1) % numThreads;
+    mtx.unlock();
 
     if( ssd )
         return GetFrameByMethod< 1 >( n, curr, frame_ctx, core, vsapi );
