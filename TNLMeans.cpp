@@ -789,9 +789,12 @@ nlFrame::nlFrame( bool _useblocks, int _size, const VSVideoInfo &vi, const VSAPI
     if( !_useblocks )
     {
         ds = static_cast<SDATA **>(std::malloc( 3 * sizeof(SDATA *) ));
-        for( int i = 0; i < 3; ++i )
+        std::memset( ds, 0, 3 * sizeof(SDATA *) );
+        for( int i = 0; i < vi.format->numPlanes; ++i )
         {
-            const size_t mem_size = vsapi->getFrameWidth( pf, i ) * vsapi->getFrameHeight( pf, i ) * sizeof(double);
+            const int width  = vi.width  >> (i ? vi.format->subSamplingW : 0);
+            const int height = vi.height >> (i ? vi.format->subSamplingH : 0);
+            const size_t mem_size = width * height * sizeof(double);
             ds[i] = new SDATA();
             ds[i]->sums    = static_cast<double *>(AlignedMemory::alloc( mem_size, 16 ));
             ds[i]->weights = static_cast<double *>(AlignedMemory::alloc( mem_size, 16 ));
@@ -809,12 +812,13 @@ nlFrame::~nlFrame()
     if( ds )
     {
         for( int i = 0; i < 3; ++i )
-        {
-            AlignedMemory::free( ds[i]->sums );
-            AlignedMemory::free( ds[i]->weights );
-            AlignedMemory::free( ds[i]->wmaxs );
-            delete ds[i];
-        }
+            if( ds[i] )
+            {
+                AlignedMemory::free( ds[i]->sums );
+                AlignedMemory::free( ds[i]->weights );
+                AlignedMemory::free( ds[i]->wmaxs );
+                delete ds[i];
+            }
         std::free( ds );
     }
     if( dsa ) std::free( dsa );
@@ -868,12 +872,13 @@ void nlCache::resetCacheStart( int first, int last )
 void nlCache::clearDS( nlFrame *nl )
 {
     for( int i = 0; i < 3; ++i )
-    {
-        const size_t res = nl->vsapi->getFrameWidth( nl->pf, i ) * nl->vsapi->getFrameHeight( nl->pf, i );
-        fill_zero_d( nl->ds[i]->sums,    res );
-        fill_zero_d( nl->ds[i]->weights, res );
-        fill_zero_d( nl->ds[i]->wmaxs,   res );
-    }
+        if( nl->ds[i] )
+        {
+            const size_t res = nl->vsapi->getFrameWidth( nl->pf, i ) * nl->vsapi->getFrameHeight( nl->pf, i );
+            fill_zero_d( nl->ds[i]->sums,    res );
+            fill_zero_d( nl->ds[i]->weights, res );
+            fill_zero_d( nl->ds[i]->wmaxs,   res );
+        }
     for( int i = 0; i < size; ++i ) nl->dsa[i] = 0;
 }
 
