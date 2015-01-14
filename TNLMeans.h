@@ -60,6 +60,13 @@ public:
     void clearDS        ( nlFrame *nl );
 };
 
+struct nlThread
+{
+    double  *sumsb, *weightsb, *gw;
+    nlCache *fc;
+    SDATA   *ds;
+};
+
 class TNLMeans
 {
 private:
@@ -71,11 +78,9 @@ private:
     int       Axd, Ayd, Axa, Azdm1;
     double    a, a2;
     double    h, hin, h2in;
-    double  **sumsbs, **weightsbs, **gws;
     bool      ssd;
-    nlCache **fcs;
-    SDATA   **dss;
     int       numThreads;
+    nlThread *threads;
     std::atomic<int> threadPhase;
     int mapn( int n );
     inline double GetSSD( const unsigned char *s1, const unsigned char *s2, const double *gwT, const int k ) { return (s1[k] - s2[k]) * (s1[k] - s2[k]) * gwT[k]; };
@@ -83,11 +88,11 @@ private:
     inline double GetSSDWeight( const double diff, const double gweights ) { return std::exp( (diff / gweights) * h2in ); };
     inline double GetSADWeight( const double diff, const double gweights ) { return std::exp( (diff / gweights) * hin ); };
     VSFrameRef *newVideoFrame( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
-    template < int ssd > VSFrameRef *GetFrameByMethod( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
-    template < int ssd > VSFrameRef *GetFrameWZ      ( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
-    template < int ssd > VSFrameRef *GetFrameWZB     ( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
-    template < int ssd > VSFrameRef *GetFrameWOZ     ( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
-    template < int ssd > VSFrameRef *GetFrameWOZB    ( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
+    template < int ssd > VSFrameRef *GetFrameByMethod( int n, int thread, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
+    template < int ssd > VSFrameRef *GetFrameWZ      ( int n, int thread, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
+    template < int ssd > VSFrameRef *GetFrameWZB     ( int n, int thread, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
+    template < int ssd > VSFrameRef *GetFrameWOZ     ( int n, int thread, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
+    template < int ssd > VSFrameRef *GetFrameWOZB    ( int n, int thread, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
 
 public:
     VSVideoInfo vi;

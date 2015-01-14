@@ -45,13 +45,8 @@ TNLMeans::TNLMeans
 {
     node =  vsapi->propGetNode( in, "clip", 0, 0 );
     vi   = *vsapi->getVideoInfo( node );
-    fcs       = nullptr;
-    gws       = nullptr;
-    sumsbs    = nullptr;
-    weightsbs = nullptr;
-    dss       = nullptr;
     threadPhase = 0;
-    numThreads = vsapi->getCoreInfo( core )->numThreads;
+    numThreads  = vsapi->getCoreInfo( core )->numThreads;
     if( vi.format->colorFamily == cmCompat ) { vsapi->setError( out, "TNLMeans:  only planar formats are supported!"); return; }
     if( vi.format->bitsPerSample != 8 )      { vsapi->setError( out, "TNLMeans:  only 8-bit formats are supported!"); return; }
     if( h <= 0.0 ) { vsapi->setError( out, "TNLMeans:  h must be greater than 0!" );               return; }
@@ -79,39 +74,27 @@ TNLMeans::TNLMeans
     Azdm1 = Az * 2;
     a2 = a * a;
 
-    if( Az )
-    {
-        fcs = static_cast<nlCache **>(std::malloc( numThreads * sizeof(nlCache *) ));
-        if( !fcs ) { vsapi->setError( out, "TNLMeans:  malloc failure (fcs)!" ); return; }
-        for( int i = 0; i < numThreads; ++i )
-            fcs[i] = new nlCache( Az * 2 + 1, (Bx > 0 || By > 0), vi, vsapi );
-    }
+    threads = static_cast<nlThread *>(std::malloc( numThreads * sizeof(nlThread) ));
+    if( !threads ) { vsapi->setError( out, "TNLMeans:  malloc failure (threads)!" ); return; }
+    memset( threads, 0, numThreads * sizeof(nlThread) );
 
-    if( Bx || By )
+    for( int i = 0; i < numThreads; ++i )
     {
-        sumsbs = static_cast<double **>(std::malloc( numThreads * sizeof(double *) ));
-        if( !sumsbs ) { vsapi->setError( out, "TNLMeans:  malloc failure (sumsbs)!" ); return; }
-        for( int i = 0; i < numThreads; ++i )
+        nlThread *t = &threads[i];
+        if( Az )
+            t->fc = new nlCache( Az * 2 + 1, (Bx > 0 || By > 0), vi, vsapi );
+
+        if( Bx || By )
         {
-            sumsbs[i] = static_cast<double *>(AlignedMemory::alloc( Bxa * sizeof(double), 16 ));
-            if( !sumsbs[i] ) { vsapi->setError( out, "TNLMeans:  malloc failure (sumsb)!" ); return; }
+            t->sumsb = static_cast<double *>(AlignedMemory::alloc( Bxa * sizeof(double), 16 ));
+            if( !t->sumsb ) { vsapi->setError( out, "TNLMeans:  malloc failure (sumsb)!" ); return; }
+            t->weightsb = static_cast<double *>(AlignedMemory::alloc( Bxa * sizeof(double), 16 ));
+            if( !t->weightsb ) { vsapi->setError( out, "TNLMeans:  malloc failure (weightsb)!" ); return; }
         }
-        weightsbs = static_cast<double **>(std::malloc( numThreads * sizeof(double *) ));
-        if( !weightsbs ) { vsapi->setError( out, "TNLMeans:  malloc failure (weightsbs)!" ); return; }
-        for( int i = 0; i < numThreads; ++i )
-        {
-            weightsbs[i] = static_cast<double *>(AlignedMemory::alloc( Bxa * sizeof(double), 16 ));
-            if( !weightsbs[i] ) { vsapi->setError( out, "TNLMeans:  malloc failure (weightsb)!" ); return; }
-        }
-    }
-    else if( Az == 0 )
-    {
-        dss = static_cast<SDATA **>(std::malloc( numThreads * sizeof(SDATA *) ));
-        if( !dss ) { vsapi->setError( out, "TNLMeans:  malloc failure (ds)!" ); return; }
-        for( int i = 0; i < numThreads; ++i )
+        else if( Az == 0 )
         {
             SDATA *ds = new SDATA();
-            dss[i] = ds;
+            t->ds = ds;
             ds->sums    = static_cast<double *>(AlignedMemory::alloc( vi.width * vi.height * sizeof(double), 16 ));
             ds->weights = static_cast<double *>(AlignedMemory::alloc( vi.width * vi.height * sizeof(double), 16 ));
             ds->wmaxs   = static_cast<double *>(AlignedMemory::alloc( vi.width * vi.height * sizeof(double), 16 ));
@@ -121,15 +104,10 @@ TNLMeans::TNLMeans
                 return;
             }
         }
-    }
 
-    gws = static_cast<double **>(std::malloc( numThreads * sizeof(double *) ));
-    if( !gws ) { vsapi->setError( out, "TNLMeans:  malloc failure (gws)!" ); return; }
-    for( int i = 0; i < numThreads; ++i )
-    {
         double *gw = static_cast<double *>(AlignedMemory::alloc( Sxd * Syd * sizeof(double), 16 ));
         if( !gw ) vsapi->setError( out, "TNLMeans:  malloc failure (gw)!" );
-        gws[i] = gw;
+        t->gw = gw;
         int w = 0, m, n;
         for( int j = -Sy; j <= Sy; ++j )
         {
@@ -151,42 +129,27 @@ TNLMeans::TNLMeans
 
 TNLMeans::~TNLMeans()
 {
-    if( fcs )
+    for( int i = 0; i < numThreads; ++i )
     {
-        for( int i = 0; i < numThreads; ++i )
-            delete fcs[i];
-        std::free( fcs );
-    }
-    if( gws )
-    {
-        for( int i = 0; i < numThreads; ++i )
-            AlignedMemory::free( gws[i] );
-        std::free( gws );
-    }
-    if( sumsbs )
-    {
-        for( int i = 0; i < numThreads; ++i )
-            AlignedMemory::free( sumsbs[i] );
-        std::free( sumsbs );
-    }
-    if( weightsbs )
-    {
-        for( int i = 0; i < numThreads; ++i )
-            AlignedMemory::free( weightsbs[i] );
-        std::free( weightsbs );
-    }
-    if( dss )
-    {
-        for( int i = 0; i < numThreads; ++i )
+        nlThread *t = &threads[i];
+        if( t->fc )
+            delete t->fc;
+        if( t->gw )
+            AlignedMemory::free( t->gw );
+        if( t->sumsb )
+            AlignedMemory::free( t->sumsb );
+        if( t->weightsb )
+            AlignedMemory::free( t->weightsb );
+        if( t->ds )
         {
-            SDATA *ds = dss[i];
+            SDATA *ds = t->ds;
             AlignedMemory::free( ds->sums );
             AlignedMemory::free( ds->weights );
             AlignedMemory::free( ds->wmaxs );
             delete ds;
         }
-        std::free( dss );
     }
+    std::free( threads );
 }
 
 void TNLMeans::RequestFrame
@@ -225,6 +188,7 @@ template < int ssd >
 VSFrameRef *TNLMeans::GetFrameByMethod
 (
     int             n,
+    int             thread,
     VSFrameContext *frame_ctx,
     VSCore         *core,
     const VSAPI    *vsapi
@@ -233,16 +197,16 @@ VSFrameRef *TNLMeans::GetFrameByMethod
     if( Az )
     {
         if( Bx || By )
-            return GetFrameWZB< ssd >( n, frame_ctx, core, vsapi );
+            return GetFrameWZB< ssd >( n, thread, frame_ctx, core, vsapi );
         else
-            return GetFrameWZ< ssd >( n, frame_ctx, core, vsapi );
+            return GetFrameWZ< ssd >( n, thread, frame_ctx, core, vsapi );
     }
     else
     {
         if( Bx || By )
-            return GetFrameWOZB< ssd >( n, frame_ctx, core, vsapi );
+            return GetFrameWOZB< ssd >( n, thread, frame_ctx, core, vsapi );
         else
-            return GetFrameWOZ< ssd >( n, frame_ctx, core, vsapi );
+            return GetFrameWOZ< ssd >( n, thread, frame_ctx, core, vsapi );
     }
 }
 
@@ -254,26 +218,36 @@ VSFrameRef *TNLMeans::GetFrame
     const VSAPI    *vsapi
 )
 {
-    int expected = numThreads;
-    threadPhase++;
-    threadPhase.compare_exchange_weak( expected, 0 );
+    const int curr = (threadPhase.load() + 1) % numThreads;
+    if( numThreads > 1 )
+    {
+        int expected = numThreads;
+        threadPhase++;
+        threadPhase.compare_exchange_weak( expected, 0 );
+        do
+        {
+            expected = curr;
+        } while( !threadPhase.compare_exchange_weak( expected, curr ) );
+    }
+
     if( ssd )
-        return GetFrameByMethod< 1 >( n, frame_ctx, core, vsapi );
+        return GetFrameByMethod< 1 >( n, curr, frame_ctx, core, vsapi );
     else
-        return GetFrameByMethod< 0 >( n, frame_ctx, core, vsapi );
+        return GetFrameByMethod< 0 >( n, curr, frame_ctx, core, vsapi );
 }
 
 template < int ssd >
 VSFrameRef *TNLMeans::GetFrameWZ
 (
     int             n,
+    int             thread,
     VSFrameContext *frame_ctx,
     VSCore         *core,
     const VSAPI    *vsapi
 )
 {
-    nlCache *fc = fcs[threadPhase];
-    double  *gw = gws[threadPhase];
+    nlCache *fc = threads[thread].fc;
+    double  *gw = threads[thread].gw;
     fc->resetCacheStart( n - Az, n + Az );
     for( int i = n - Az; i <= n + Az; ++i )
     {
@@ -416,15 +390,16 @@ template < int ssd >
 VSFrameRef *TNLMeans::GetFrameWZB
 (
     int             n,
+    int             thread,
     VSFrameContext *frame_ctx,
     VSCore         *core,
     const VSAPI    *vsapi
 )
 {
-    nlCache *fc       = fcs      [threadPhase];
-    double  *sumsb    = sumsbs   [threadPhase];
-    double  *weightsb = weightsbs[threadPhase];
-    double  *gw       = gws      [threadPhase];
+    nlCache *fc       = threads[thread].fc;
+    double  *sumsb    = threads[thread].sumsb;
+    double  *weightsb = threads[thread].weightsb;
+    double  *gw       = threads[thread].gw;
     fc->resetCacheStart( n - Az, n + Az );
     for( int i = n - Az; i <= n + Az; ++i )
     {
@@ -559,6 +534,7 @@ template < int ssd >
 VSFrameRef *TNLMeans::GetFrameWOZ
 (
     int             n,
+    int             thread,
     VSFrameContext *frame_ctx,
     VSCore         *core,
     const VSAPI    *vsapi
@@ -571,8 +547,8 @@ VSFrameRef *TNLMeans::GetFrameWOZ
         return nullptr;
     }
     const VSFrameRef *srcPF = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
-    SDATA  *ds = dss[threadPhase];
-    double *gw = gws[threadPhase];
+    SDATA  *ds = threads[thread].ds;
+    double *gw = threads[thread].gw;
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
         const unsigned char *srcp = vsapi->getReadPtr( srcPF, plane );
@@ -657,6 +633,7 @@ template < int ssd >
 VSFrameRef *TNLMeans::GetFrameWOZB
 (
     int             n,
+    int             thread,
     VSFrameContext *frame_ctx,
     VSCore         *core,
     const VSAPI    *vsapi
@@ -669,9 +646,9 @@ VSFrameRef *TNLMeans::GetFrameWOZB
         return nullptr;
     }
     const VSFrameRef *srcPF = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
-    double *sumsb    = sumsbs   [threadPhase];
-    double *weightsb = weightsbs[threadPhase];
-    double *gw       = gws      [threadPhase];
+    double *sumsb    = threads[thread].sumsb;
+    double *weightsb = threads[thread].weightsb;
+    double *gw       = threads[thread].gw;
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
         const unsigned char *srcp = vsapi->getReadPtr( srcPF, plane );
