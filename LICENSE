@@ -2,7 +2,7 @@
 
    TNLMeans is an implementation of the NL-means denoising algorithm.
    Aside from the original method, TNLMeans also supports extension
-   into 3D, a faster, block based approach, and a multiscale version.
+   into 3D and a faster, block based approach.
 
    Copyright (C) 2006-2007 Kevin Stone
 
