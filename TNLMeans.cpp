@@ -105,7 +105,7 @@ TNLMeans::TNLMeans
         }
 
         double *gw = static_cast<double *>(AlignedMemory::alloc( Sxd * Syd * sizeof(double), 16 ));
-        if( !gw ) vsapi->setError( out, "TNLMeans:  malloc failure (gw)!" );
+        if( !gw ) { vsapi->setError( out, "TNLMeans:  malloc failure (gw)!" ); throw bad_alloc(); };
         t->gw = gw;
         int w = 0, m, n;
         for( int j = -Sy; j <= Sy; ++j )
