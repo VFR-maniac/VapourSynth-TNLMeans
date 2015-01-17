@@ -68,12 +68,15 @@ public:
     void clearDS        ( nlFrame *nl );
 };
 
-struct nlThread
+class nlThread
 {
+public:
     int      active;
     double  *sumsb, *weightsb, *gw;
     nlCache *fc;
     SDATA   *ds;
+    nlThread();
+    ~nlThread();
 };
 
 class TNLMeans
@@ -120,7 +123,7 @@ public:
         VSCore      *core,
         const VSAPI *vsapi
     );
-    /* Desctructor */
+    /* Destructor */
     ~TNLMeans();
 };
 

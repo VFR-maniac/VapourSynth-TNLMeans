@@ -74,13 +74,12 @@ TNLMeans::TNLMeans
     Azdm1 = Az * 2;
     a2 = a * a;
 
-    threads = static_cast<nlThread *>(std::malloc( numThreads * sizeof(nlThread) ));
-    if( !threads ) { vsapi->setError( out, "TNLMeans:  malloc failure (threads)!" ); return; }
-    memset( threads, 0, numThreads * sizeof(nlThread) );
+    std::unique_ptr< nlThread [] > threads( new ( std::nothrow ) nlThread[numThreads] );
+    if( !threads ) { vsapi->setError( out, "TNLMeans:  new failure (threads)!" ); return; }
 
     for( int i = 0; i < numThreads; ++i )
     {
-        nlThread *t = &threads[i];
+        nlThread *t = &threads.get()[i];
         if( Az )
             t->fc = new nlCache( Az * 2 + 1, (Bx > 0 || By > 0), vi, vsapi );
 
@@ -125,31 +124,12 @@ TNLMeans::TNLMeans
             }
         }
     }
+    this->threads = threads.release();
 }
 
 TNLMeans::~TNLMeans()
 {
-    for( int i = 0; i < numThreads; ++i )
-    {
-        nlThread *t = &threads[i];
-        if( t->fc )
-            delete t->fc;
-        if( t->gw )
-            AlignedMemory::free( t->gw );
-        if( t->sumsb )
-            AlignedMemory::free( t->sumsb );
-        if( t->weightsb )
-            AlignedMemory::free( t->weightsb );
-        if( t->ds )
-        {
-            SDATA *ds = t->ds;
-            AlignedMemory::free( ds->sums );
-            AlignedMemory::free( ds->weights );
-            AlignedMemory::free( ds->wmaxs );
-            delete ds;
-        }
-    }
-    std::free( threads );
+    delete [] threads;
 }
 
 void TNLMeans::RequestFrame
@@ -867,4 +847,30 @@ void nlCache::clearDS( nlFrame *nl )
 int nlCache::getCachePos( int n )
 {
     return (start_pos + n) % size;
+}
+
+nlThread::nlThread()
+{
+    active = 0;
+    sumsb = weightsb = gw = nullptr;
+    fc = nullptr;
+    ds = nullptr;
+}
+nlThread::~nlThread()
+{
+    if( fc )
+        delete fc;
+    if( gw )
+        AlignedMemory::free( gw );
+    if( sumsb )
+        AlignedMemory::free( sumsb );
+    if( weightsb )
+        AlignedMemory::free( weightsb );
+    if( ds )
+    {
+        AlignedMemory::free( ds->sums );
+        AlignedMemory::free( ds->weights );
+        AlignedMemory::free( ds->wmaxs );
+        delete ds;
+    }
 }
