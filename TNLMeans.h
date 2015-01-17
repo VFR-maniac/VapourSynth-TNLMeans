@@ -111,6 +111,8 @@ public:
     VSNodeRef  *node;
     void RequestFrame( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
     VSFrameRef *GetFrame( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
+    typedef class {} bad_param;
+    typedef class {} bad_alloc;
     /* Constructor */
     TNLMeans
     (

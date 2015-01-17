@@ -47,19 +47,19 @@ TNLMeans::TNLMeans
     node =  vsapi->propGetNode( in, "clip", 0, 0 );
     vi   = *vsapi->getVideoInfo( node );
     numThreads = vsapi->getCoreInfo( core )->numThreads;
-    if( vi.format->colorFamily == cmCompat ) { vsapi->setError( out, "TNLMeans:  only planar formats are supported!"); return; }
-    if( vi.format->bitsPerSample != 8 )      { vsapi->setError( out, "TNLMeans:  only 8-bit formats are supported!"); return; }
-    if( h <= 0.0 ) { vsapi->setError( out, "TNLMeans:  h must be greater than 0!" );               return; }
-    if( a <= 0.0 ) { vsapi->setError( out, "TNLMeans:  a must be greater than 0!" );               return; }
-    if( Ax < 0 )   { vsapi->setError( out, "TNLMeans:  ax must be greater than or equal to 0!" );  return; }
-    if( Ay < 0 )   { vsapi->setError( out, "TNLMeans:  ay must be greater than or equal to 0!" );  return; }
-    if( Az < 0 )   { vsapi->setError( out, "TNLMeans:  az must be greater than or equal to 0!" );  return; }
-    if( Bx < 0 )   { vsapi->setError( out, "TNLMeans:  bx must be greater than or equal to 0!" );  return; }
-    if( By < 0 )   { vsapi->setError( out, "TNLMeans:  by must be greater than or equal to 0!" );  return; }
-    if( Sx < 0 )   { vsapi->setError( out, "TNLMeans:  sx must be greater than or equal to 0!" );  return; }
-    if( Sy < 0 )   { vsapi->setError( out, "TNLMeans:  sy must be greater than or equal to 0!" );  return; }
-    if( Sx < Bx )  { vsapi->setError( out, "TNLMeans:  sx must be greater than or equal to bx!" ); return; }
-    if( Sy < By )  { vsapi->setError( out, "TNLMeans:  sy must be greater than or equal to by!" ); return; }
+    if( vi.format->colorFamily == cmCompat ) { vsapi->setError( out, "TNLMeans:  only planar formats are supported!"); throw bad_param(); }
+    if( vi.format->bitsPerSample != 8 )      { vsapi->setError( out, "TNLMeans:  only 8-bit formats are supported!");  throw bad_param(); }
+    if( h <= 0.0 ) { vsapi->setError( out, "TNLMeans:  h must be greater than 0!" );               throw bad_param(); }
+    if( a <= 0.0 ) { vsapi->setError( out, "TNLMeans:  a must be greater than 0!" );               throw bad_param(); }
+    if( Ax < 0 )   { vsapi->setError( out, "TNLMeans:  ax must be greater than or equal to 0!" );  throw bad_param(); }
+    if( Ay < 0 )   { vsapi->setError( out, "TNLMeans:  ay must be greater than or equal to 0!" );  throw bad_param(); }
+    if( Az < 0 )   { vsapi->setError( out, "TNLMeans:  az must be greater than or equal to 0!" );  throw bad_param(); }
+    if( Bx < 0 )   { vsapi->setError( out, "TNLMeans:  bx must be greater than or equal to 0!" );  throw bad_param(); }
+    if( By < 0 )   { vsapi->setError( out, "TNLMeans:  by must be greater than or equal to 0!" );  throw bad_param(); }
+    if( Sx < 0 )   { vsapi->setError( out, "TNLMeans:  sx must be greater than or equal to 0!" );  throw bad_param(); }
+    if( Sy < 0 )   { vsapi->setError( out, "TNLMeans:  sy must be greater than or equal to 0!" );  throw bad_param(); }
+    if( Sx < Bx )  { vsapi->setError( out, "TNLMeans:  sx must be greater than or equal to bx!" ); throw bad_param(); }
+    if( Sy < By )  { vsapi->setError( out, "TNLMeans:  sy must be greater than or equal to by!" ); throw bad_param(); }
     h2in = -1.0 / (h * h);
     hin = -1.0 / h;
     Sxd = Sx * 2 + 1;
@@ -75,7 +75,7 @@ TNLMeans::TNLMeans
     a2 = a * a;
 
     std::unique_ptr< nlThread [] > threads( new ( std::nothrow ) nlThread[numThreads] );
-    if( !threads ) { vsapi->setError( out, "TNLMeans:  new failure (threads)!" ); return; }
+    if( !threads ) { vsapi->setError( out, "TNLMeans:  new failure (threads)!" ); throw bad_alloc(); }
 
     for( int i = 0; i < numThreads; ++i )
     {
@@ -86,9 +86,9 @@ TNLMeans::TNLMeans
         if( Bx || By )
         {
             t->sumsb = static_cast<double *>(AlignedMemory::alloc( Bxa * sizeof(double), 16 ));
-            if( !t->sumsb ) { vsapi->setError( out, "TNLMeans:  malloc failure (sumsb)!" ); return; }
+            if( !t->sumsb ) { vsapi->setError( out, "TNLMeans:  malloc failure (sumsb)!" ); throw bad_alloc(); }
             t->weightsb = static_cast<double *>(AlignedMemory::alloc( Bxa * sizeof(double), 16 ));
-            if( !t->weightsb ) { vsapi->setError( out, "TNLMeans:  malloc failure (weightsb)!" ); return; }
+            if( !t->weightsb ) { vsapi->setError( out, "TNLMeans:  malloc failure (weightsb)!" ); throw bad_alloc(); }
         }
         else if( Az == 0 )
         {
@@ -100,7 +100,7 @@ TNLMeans::TNLMeans
             if( !ds->sums || !ds->weights || !ds->wmaxs )
             {
                 vsapi->setError( out, "TNLMeans:  malloc failure (ds->member)!" );
-                return;
+                throw bad_alloc();
             }
         }
 

@@ -129,22 +129,35 @@ static void VS_CC createTNLMeans
     set_option_double( &h,   0.5, "h",   in, vsapi );
     set_option_int64 ( &ssd,   1, "ssd", in, vsapi );
 
-    TNLMeans *d = new TNLMeans( ax, ay, az, sx, sy, bx, by, a, h, ssd, in, out, core, vsapi );
-    if( d == nullptr )
+    try
+    {
+        TNLMeans *d = new TNLMeans( ax, ay, az, sx, sy, bx, by, a, h, ssd, in, out, core, vsapi );
+        if( d == nullptr )
+            throw std::bad_alloc();
+
+        vsapi->createFilter
+        (
+            in, out,
+            "TNLMeans",
+            initTNLMeans,
+            getFrameTNLMeans,
+            closeTNLMeans,
+            fmParallel, 0, d, core
+        );
+    }
+    catch( TNLMeans::bad_param & )
+    {
+        return;
+    }
+    catch( TNLMeans::bad_alloc & )
+    {
+        return;
+    }
+    catch( std::bad_alloc & )
     {
         vsapi->setError( out, "TNLMeans: create failure (TNLMeans)!" );
         return;
     }
-
-    vsapi->createFilter
-    (
-        in, out,
-        "TNLMeans",
-        initTNLMeans,
-        getFrameTNLMeans,
-        closeTNLMeans,
-        fmParallel, 0, d, core
-    );
 }
 
 VS_EXTERNAL_API( void ) VapourSynthPluginInit
