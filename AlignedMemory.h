@@ -23,3 +23,24 @@ namespace AlignedMemory
     void *alloc( size_t size, size_t alignment );
     void free( void *ptr );
 }
+
+template < typename T, size_t alignment >
+class AlignedArrayObject
+{
+private:
+    T *x;
+public:
+    using bad_alloc = class : std::bad_alloc { using std::bad_alloc::bad_alloc; };
+    AlignedArrayObject() { x = nullptr; }
+    template < typename U >
+    AlignedArrayObject( U n )
+    {
+        if( n < 0 )
+            throw bad_alloc{};
+        x = static_cast< T * >(AlignedMemory::alloc( n * sizeof(T), alignment ));
+        if( !x )
+            throw bad_alloc{};
+    }
+    ~AlignedArrayObject() { AlignedMemory::free( x ); }
+    inline T * get() const { return x; }
+};

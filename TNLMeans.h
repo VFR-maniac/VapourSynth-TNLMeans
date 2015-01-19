@@ -27,6 +27,7 @@
 #include <cstring>
 #include <algorithm>
 #include <limits>
+#include <string>
 
 #ifdef __MINGW32__
 #include "mingw.thread.h"
@@ -36,11 +37,23 @@
 #include <mutex>
 #endif
 
+#include "AlignedMemory.h"
+
+class CustomException
+{
+private:
+    const std::string name;
+public:
+    CustomException() : name( std::string() ) {}
+    CustomException( const std::string name ) : name( name ) {}
+    const char * what() const noexcept { return name.c_str(); }
+};
+
 struct SDATA
 {
-    double *weights;
-    double *sums;
-    double *wmaxs;
+    AlignedArrayObject< double, 16 > *weights;
+    AlignedArrayObject< double, 16 > *sums;
+    AlignedArrayObject< double, 16 > *wmaxs;
 };
 
 class nlFrame
@@ -51,9 +64,11 @@ public:
     const VSFrameRef *pf;
     SDATA           **ds;
     int              *dsa;
+    typedef class {} bad_alloc;
     nlFrame( bool _useblocks, int _size, const VSVideoInfo &vi, const VSAPI *_vsapi );
     ~nlFrame();
     void setFNum( int i );
+    void clean();
 };
 
 class nlCache
@@ -61,18 +76,22 @@ class nlCache
 public:
     nlFrame **frames;
     int start_pos, size;
+    typedef class {} bad_alloc;
     nlCache( int _size, bool _useblocks, const VSVideoInfo &vi, const VSAPI *vsapi );
     ~nlCache();
     void resetCacheStart( int first, int last );
     int  getCachePos    ( int n );
     void clearDS        ( nlFrame *nl );
+    void clean();
 };
 
 class nlThread
 {
 public:
-    int      active;
-    double  *sumsb, *weightsb, *gw;
+    int active;
+    AlignedArrayObject< double, 16 > *sumsb;
+    AlignedArrayObject< double, 16 > *weightsb;
+    AlignedArrayObject< double, 16 > *gw;
     nlCache *fc;
     SDATA   *ds;
     nlThread();
@@ -95,10 +114,10 @@ private:
     nlThread *threads;
     std::mutex mtx;
     int mapn( int n );
-    inline double GetSSD( const unsigned char *s1, const unsigned char *s2, const double *gwT, const int k ) { return (s1[k] - s2[k]) * (s1[k] - s2[k]) * gwT[k]; };
-    inline double GetSAD( const unsigned char *s1, const unsigned char *s2, const double *gwT, const int k ) { return std::abs( s1[k] - s2[k] ) * gwT[k]; };
-    inline double GetSSDWeight( const double diff, const double gweights ) { return std::exp( (diff / gweights) * h2in ); };
-    inline double GetSADWeight( const double diff, const double gweights ) { return std::exp( (diff / gweights) * hin ); };
+    inline double GetSSD( const unsigned char *s1, const unsigned char *s2, const double *gwT, const int k ) { return (s1[k] - s2[k]) * (s1[k] - s2[k]) * gwT[k]; }
+    inline double GetSAD( const unsigned char *s1, const unsigned char *s2, const double *gwT, const int k ) { return std::abs( s1[k] - s2[k] ) * gwT[k]; }
+    inline double GetSSDWeight( const double diff, const double gweights ) { return std::exp( (diff / gweights) * h2in ); }
+    inline double GetSADWeight( const double diff, const double gweights ) { return std::exp( (diff / gweights) * hin ); }
     VSFrameRef *newVideoFrame( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
     template < int ssd > VSFrameRef *GetFrameByMethod( int n, int thread, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
     template < int ssd > VSFrameRef *GetFrameWZ      ( int n, int thread, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
@@ -111,8 +130,8 @@ public:
     VSNodeRef  *node;
     void RequestFrame( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
     VSFrameRef *GetFrame( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
-    typedef class {} bad_param;
-    typedef class {} bad_alloc;
+    using bad_param = class bad_param : public CustomException { using CustomException::CustomException; };
+    using bad_alloc = class bad_alloc : public CustomException { using CustomException::CustomException; };
     /* Constructor */
     TNLMeans
     (

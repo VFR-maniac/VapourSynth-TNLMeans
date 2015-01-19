@@ -79,10 +79,19 @@ static const VSFrameRef * VS_CC getFrameTNLMeans
 {
     TNLMeans *d = static_cast<TNLMeans *>(*instance_data);
 
-    if( activation_reason == arInitial )
-        d->RequestFrame( n, frame_ctx, core, vsapi );
-    else if( activation_reason == arAllFramesReady )
-        return d->GetFrame( n, frame_ctx, core, vsapi );
+    try
+    {
+        if( activation_reason == arInitial )
+            d->RequestFrame( n, frame_ctx, core, vsapi );
+        else if( activation_reason == arAllFramesReady )
+            return d->GetFrame( n, frame_ctx, core, vsapi );
+    }
+    catch( std::bad_alloc &e )
+    {
+        char errMessage[256];
+        sprintf( errMessage, "TNLMeans:  %s", e.what() );
+        vsapi->setFilterError( errMessage, frame_ctx );
+    }
 
     return nullptr;
 }
@@ -145,17 +154,27 @@ static void VS_CC createTNLMeans
             fmParallel, 0, d, core
         );
     }
-    catch( TNLMeans::bad_param & )
-    {
-        return;
-    }
-    catch( TNLMeans::bad_alloc & )
-    {
-        return;
-    }
     catch( std::bad_alloc & )
     {
-        vsapi->setError( out, "TNLMeans: create failure (TNLMeans)!" );
+        vsapi->setError( out, "TNLMeans:  create failure (TNLMeans)!" );
+        return;
+    }
+    catch( TNLMeans::bad_param &e )
+    {
+        char errMessage[256];
+        sprintf( errMessage, "TNLMeans:  %s!", e.what() );
+        vsapi->setError( out, errMessage );
+        return;
+    }
+    catch( TNLMeans::bad_alloc &e )
+    {
+        char errMessage[256];
+        sprintf( errMessage, "TNLMeans:  allocation failure (%s)!", e.what() );
+        vsapi->setError( out, errMessage );
+        return;
+    }
+    catch( ... )
+    {
         return;
     }
 }
