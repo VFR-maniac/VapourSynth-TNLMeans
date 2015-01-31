@@ -158,6 +158,8 @@ case "$TARGET_OS" in
         SONAME="$BASENAME.$SOSUFFIX.$REV"
         SONAME_LN="$BASENAME.$SOSUFFIX"
         SOFLAGS="-Wl,-soname,$SONAME"
+        CXXFLAGS="$CXXFLAGS -fPIC"
+        LDFLAGS="-fPIC $LDFLAGS"
         ;;
 esac
 

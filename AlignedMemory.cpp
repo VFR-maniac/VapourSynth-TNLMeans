@@ -18,6 +18,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *****************************************************************************/
 
+#include <cstddef>
 #include <cassert>
 #include <cstdlib>
 
