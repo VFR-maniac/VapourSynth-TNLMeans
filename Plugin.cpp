@@ -189,8 +189,8 @@ VS_EXTERNAL_API( void ) VapourSynthPluginInit
     config_func
     (
         "systems.innocent.tnlm", "tnlm",
-         "TNLMeans" VSTNLMEANS_REV,
-         VAPOURSYNTH_API_VERSION, 1, plugin
+        "TNLMeans" VSTNLMEANS_REV,
+        VAPOURSYNTH_API_VERSION, 1, plugin
     );
     register_func
     (
