@@ -196,6 +196,6 @@ VS_EXTERNAL_API( void ) VapourSynthPluginInit
     (
         "TNLMeans",
         "clip:clip;ax:int:opt;ay:int:opt;az:int:opt;sx:int:opt;sy:int:opt;bx:int:opt;by:int:opt;a:float:opt;h:float:opt;ssd:int:opt;",
-        createTNLMeans, NULL, plugin
+        createTNLMeans, nullptr, plugin
     );
 }

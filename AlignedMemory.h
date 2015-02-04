@@ -38,7 +38,7 @@ public:
         if( n < 0 )
             throw bad_alloc{};
         x = static_cast< T * >(AlignedMemory::alloc( n * sizeof(T), alignment ));
-        if( !x )
+        if( x == nullptr )
             throw bad_alloc{};
     }
     ~AlignedArrayObject() { AlignedMemory::free( x ); }

@@ -74,7 +74,7 @@ TNLMeans::TNLMeans
     a2 = a * a;
 
     std::unique_ptr< nlThread [] > threads( new ( std::nothrow ) nlThread[numThreads] );
-    if( !threads ) { throw bad_alloc{ "threads" }; }
+    if( threads == nullptr ) { throw bad_alloc{ "threads" }; }
 
     for( int i = 0; i < numThreads; ++i )
     {
@@ -247,7 +247,7 @@ VSFrameRef *TNLMeans::GetFrameWZ
         }
     }
     VSFrameRef *dstPF = newVideoFrame( n, frame_ctx, core, vsapi );
-    if( !dstPF )
+    if( dstPF == nullptr )
     {
         vsapi->setFilterError( "TNLMeans:  frame allocation failure (dstPF)!", frame_ctx );
         return nullptr;
@@ -394,7 +394,7 @@ VSFrameRef *TNLMeans::GetFrameWZB
     std::unique_ptr< AlignedArrayObject< const unsigned char *, 16 > > _pfplut( new AlignedArrayObject< const unsigned char *, 16 >{ fc->size } );
     const unsigned char **pfplut = _pfplut.get()->get();
     VSFrameRef *dstPF = newVideoFrame( n, frame_ctx, core, vsapi );
-    if( !dstPF )
+    if( dstPF == nullptr )
     {
         vsapi->setFilterError( "TNLMeans:  frame allocation failure (dstPF)!", frame_ctx );
         return nullptr;
@@ -519,7 +519,7 @@ VSFrameRef *TNLMeans::GetFrameWOZ
 )
 {
     VSFrameRef *dstPF = newVideoFrame( n, frame_ctx, core, vsapi );
-    if( !dstPF )
+    if( dstPF == nullptr )
     {
         vsapi->setFilterError( "TNLMeans:  frame allocation failure (dstPF)!", frame_ctx );
         return nullptr;
@@ -618,7 +618,7 @@ VSFrameRef *TNLMeans::GetFrameWOZB
 )
 {
     VSFrameRef *dstPF = newVideoFrame( n, frame_ctx, core, vsapi );
-    if( !dstPF )
+    if( dstPF == nullptr )
     {
         vsapi->setFilterError( "TNLMeans:  frame allocation failure (dstPF)!", frame_ctx );
         return nullptr;

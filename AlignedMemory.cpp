@@ -28,7 +28,7 @@ namespace AlignedMemory
     {
         assert( alignment <= 0x80 );
         void *ptr = std::malloc( size + alignment );
-        if( !ptr )
+        if( ptr == nullptr )
             return nullptr;
         ptrdiff_t diff = ((~(reinterpret_cast<ptrdiff_t>(ptr))) & (alignment - 1)) + 1;
         ptr = static_cast<void *>(static_cast<char *>(ptr) + diff);
