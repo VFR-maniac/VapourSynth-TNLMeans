@@ -114,8 +114,8 @@ private:
     nlThread *threads;
     std::mutex mtx;
     int mapn( int n );
-    inline double GetSSD( const unsigned char *s1, const unsigned char *s2, const double *gwT, const int k ) { return (s1[k] - s2[k]) * (s1[k] - s2[k]) * gwT[k]; }
-    inline double GetSAD( const unsigned char *s1, const unsigned char *s2, const double *gwT, const int k ) { return std::abs( s1[k] - s2[k] ) * gwT[k]; }
+    inline double GetSSD( const uint8_t *s1, const uint8_t *s2, const double *gwT, const int k ) { return (s1[k] - s2[k]) * (s1[k] - s2[k]) * gwT[k]; }
+    inline double GetSAD( const uint8_t *s1, const uint8_t *s2, const double *gwT, const int k ) { return std::abs( s1[k] - s2[k] ) * gwT[k]; }
     inline double GetSSDWeight( const double diff, const double gweights ) { return std::exp( (diff / gweights) * h2in ); }
     inline double GetSADWeight( const double diff, const double gweights ) { return std::exp( (diff / gweights) * hin ); }
     VSFrameRef *newVideoFrame( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );

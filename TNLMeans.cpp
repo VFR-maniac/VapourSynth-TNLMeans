@@ -252,12 +252,12 @@ VSFrameRef *TNLMeans::GetFrameWZ
         vsapi->setFilterError( "TNLMeans:  frame allocation failure (dstPF)!", frame_ctx );
         return nullptr;
     }
-    std::unique_ptr< AlignedArrayObject< const unsigned char *, 16 > > _pfplut( new AlignedArrayObject< const unsigned char *, 16 >{ fc->size } );
-    std::unique_ptr< AlignedArrayObject< const SDATA         *, 16 > > _dslut ( new AlignedArrayObject< const SDATA         *, 16 >{ fc->size } );
-    std::unique_ptr< AlignedArrayObject<       int           *, 16 > > _dsalut( new AlignedArrayObject<       int           *, 16 >{ fc->size } );
-    const unsigned char **pfplut = _pfplut.get()->get();
-    const SDATA         **dslut  = _dslut.get()->get();
-    int                 **dsalut = _dsalut.get()->get();
+    std::unique_ptr< AlignedArrayObject< const uint8_t *, 16 > > _pfplut( new AlignedArrayObject< const uint8_t *, 16 >{ fc->size } );
+    std::unique_ptr< AlignedArrayObject< const SDATA   *, 16 > > _dslut ( new AlignedArrayObject< const SDATA   *, 16 >{ fc->size } );
+    std::unique_ptr< AlignedArrayObject<       int     *, 16 > > _dsalut( new AlignedArrayObject<       int     *, 16 >{ fc->size } );
+    const uint8_t **pfplut = _pfplut.get()->get();
+    const SDATA   **dslut  = _dslut.get()->get();
+    int           **dsalut = _dsalut.get()->get();
     for( int i = 0; i < fc->size; ++i )
         dsalut[i] = fc->frames[fc->getCachePos( i )]->dsa;
     int *ddsa = dsalut[Az];
@@ -266,14 +266,14 @@ VSFrameRef *TNLMeans::GetFrameWZ
     const int stopz  = Az + std::min( vi.numFrames - n - 1, Az );
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const unsigned char *srcp = vsapi->getReadPtr( srcPF, plane );
-        const unsigned char *pf2p = vsapi->getReadPtr( srcPF, plane );
-        unsigned char *dstp = vsapi->getWritePtr   ( dstPF, plane );
-        const int pitch     = vsapi->getStride     ( dstPF, plane );
-        const int height    = vsapi->getFrameHeight( dstPF, plane );
-        const int width     = vsapi->getFrameWidth ( dstPF, plane );
-        const int heightm1  = height - 1;
-        const int widthm1   = width  - 1;
+        const uint8_t *srcp = vsapi->getReadPtr( srcPF, plane );
+        const uint8_t *pf2p = vsapi->getReadPtr( srcPF, plane );
+        uint8_t  *dstp     = vsapi->getWritePtr   ( dstPF, plane );
+        const int pitch    = vsapi->getStride     ( dstPF, plane );
+        const int height   = vsapi->getFrameHeight( dstPF, plane );
+        const int width    = vsapi->getFrameWidth ( dstPF, plane );
+        const int heightm1 = height - 1;
+        const int widthm1  = width  - 1;
         for( int i = 0; i < fc->size; ++i )
         {
             const int pos = fc->getCachePos( i );
@@ -301,14 +301,14 @@ VSFrameRef *TNLMeans::GetFrameWZ
                     const int starty = (z == Az) ? y : startyt;
                     const SDATA *cds = dslut[z];
                     int *cdsa = dsalut[z];
-                    const unsigned char *pf1p = pfplut[z];
+                    const uint8_t *pf1p = pfplut[z];
                     for( int u = starty; u <= stopy; ++u )
                     {
                         const int startx = (u == y && z == Az) ? x+1 : startxt;
                         const int yT = -std::min( std::min( Sy, u ), y );
                         const int yB =  std::min( std::min( Sy, heightm1 - u ), heightm1 - y );
-                        const unsigned char *s1_saved = pf1p + (u+yT)*pitch;
-                        const unsigned char *s2_saved = pf2p + (y+yT)*pitch + x;
+                        const uint8_t *s1_saved = pf1p + (u+yT)*pitch;
+                        const uint8_t *s2_saved = pf2p + (y+yT)*pitch + x;
                         const double *gw_saved = gw+(yT+Sy)*Sxd+Sx;
                         const int pf1pl = u*pitch;
                         const int coffy = u*width;
@@ -320,8 +320,8 @@ VSFrameRef *TNLMeans::GetFrameWZ
                             double *cwmax   = &cds->wmaxs->get()  [coff];
                             const int xL = -std::min( std::min( Sx, v ), x );
                             const int xR =  std::min( std::min( Sx, widthm1 - v ), widthm1 - x );
-                            const unsigned char *s1 = s1_saved + v;
-                            const unsigned char *s2 = s2_saved;
+                            const uint8_t *s1 = s1_saved + v;
+                            const uint8_t *s2 = s2_saved;
                             const double *gwT = gw_saved;
                             double diff = 0.0, gweights = 0.0;
                             for( int j = yT; j <= yB; ++j )
@@ -391,8 +391,8 @@ VSFrameRef *TNLMeans::GetFrameWZB
             nl->setFNum( i );
         }
     }
-    std::unique_ptr< AlignedArrayObject< const unsigned char *, 16 > > _pfplut( new AlignedArrayObject< const unsigned char *, 16 >{ fc->size } );
-    const unsigned char **pfplut = _pfplut.get()->get();
+    std::unique_ptr< AlignedArrayObject< const uint8_t *, 16 > > _pfplut( new AlignedArrayObject< const uint8_t *, 16 >{ fc->size } );
+    const uint8_t **pfplut = _pfplut.get()->get();
     VSFrameRef *dstPF = newVideoFrame( n, frame_ctx, core, vsapi );
     if( dstPF == nullptr )
     {
@@ -404,14 +404,14 @@ VSFrameRef *TNLMeans::GetFrameWZB
     const int stopz  = Az + std::min( vi.numFrames - n - 1, Az );
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const unsigned char *srcp = vsapi->getReadPtr( srcPF, plane );
-        const unsigned char *pf2p = vsapi->getReadPtr( srcPF, plane );
-        unsigned char *dstp = vsapi->getWritePtr   ( dstPF, plane );
-        const int pitch     = vsapi->getStride     ( dstPF, plane );
-        const int height    = vsapi->getFrameHeight( dstPF, plane );
-        const int width     = vsapi->getFrameWidth ( dstPF, plane );
-        const int      heightm1 = height - 1;
-        const int      widthm1  = width  - 1;
+        const uint8_t *srcp = vsapi->getReadPtr( srcPF, plane );
+        const uint8_t *pf2p = vsapi->getReadPtr( srcPF, plane );
+        uint8_t  *dstp     = vsapi->getWritePtr   ( dstPF, plane );
+        const int pitch    = vsapi->getStride     ( dstPF, plane );
+        const int height   = vsapi->getFrameHeight( dstPF, plane );
+        const int width    = vsapi->getFrameWidth ( dstPF, plane );
+        const int heightm1 = height - 1;
+        const int widthm1  = width  - 1;
         double *sumsb_saved    = sumsb    + Bx;
         double *weightsb_saved = weightsb + Bx;
         for( int i = 0; i < fc->size; ++i )
@@ -431,15 +431,15 @@ VSFrameRef *TNLMeans::GetFrameWZB
                 const int xTr    = std::min( Bxd,  width - x + Bx );
                 for( int z = startz; z <= stopz; ++z )
                 {
-                    const unsigned char *pf1p = pfplut[z];
+                    const uint8_t *pf1p = pfplut[z];
                     for( int u = starty; u <= stopy; ++u )
                     {
                         const int yT  = -std::min( std::min( Sy, u ), y );
                         const int yB  =  std::min( std::min( Sy, heightm1 - u ), heightm1 - y );
                         const int yBb =  std::min( std::min( By, heightm1 - u ), heightm1 - y );
-                        const unsigned char *s1_saved  = pf1p + (u+yT)*pitch;
-                        const unsigned char *s2_saved  = pf2p + (y+yT)*pitch + x;
-                        const unsigned char *sbp_saved = pf1p + (u-By)*pitch;
+                        const uint8_t *s1_saved  = pf1p + (u+yT)*pitch;
+                        const uint8_t *s2_saved  = pf2p + (y+yT)*pitch + x;
+                        const uint8_t *sbp_saved = pf1p + (u-By)*pitch;
                         const double *gw_saved = gw+(yT+Sy)*Sxd+Sx;
                         //const int pf1pl = u*pitch;
                         for( int v = startx; v <= stopx; ++v )
@@ -447,8 +447,8 @@ VSFrameRef *TNLMeans::GetFrameWZB
                             if( z == Az && u == y && v == x ) continue;
                             const int xL = -std::min( std::min( Sx, v ), x );
                             const int xR =  std::min( std::min( Sx, widthm1 - v), widthm1 - x );
-                            const unsigned char *s1 = s1_saved + v;
-                            const unsigned char *s2 = s2_saved;
+                            const uint8_t *s1 = s1_saved + v;
+                            const uint8_t *s2 = s2_saved;
                             const double *gwT = gw_saved;
                             double diff = 0.0, gweights = 0.0;
                             for( int j = yT; j <= yB; ++j )
@@ -464,7 +464,7 @@ VSFrameRef *TNLMeans::GetFrameWZB
                             }
                             const double weight = ssd ? GetSSDWeight( diff, gweights ) : GetSADWeight( diff, gweights );
                             const int xRb = std::min( std::min( Bx, widthm1 - v ), widthm1 - x );
-                            const unsigned char *sbp = sbp_saved + v;
+                            const uint8_t *sbp = sbp_saved + v;
                             double *sumsbT    = sumsb_saved;
                             double *weightsbT = weightsb_saved;
                             for( int j = -By; j <= yBb; ++j )
@@ -482,8 +482,8 @@ VSFrameRef *TNLMeans::GetFrameWZB
                         }
                     }
                 }
-                const unsigned char *srcpT = srcp + x - Bx;
-                      unsigned char *dstpT = dstp + x - Bx;
+                const uint8_t *srcpT = srcp + x - Bx;
+                      uint8_t *dstpT = dstp + x - Bx;
                 double *sumsbTr    = sumsb;
                 double *weightsbTr = weightsb;
                 if( wmax <= std::numeric_limits<double>::epsilon() ) wmax = 1.0;
@@ -529,14 +529,14 @@ VSFrameRef *TNLMeans::GetFrameWOZ
     double *gw = threads[thread].gw->get();
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const unsigned char *srcp = vsapi->getReadPtr( srcPF, plane );
-        const unsigned char *pfp  = vsapi->getReadPtr( srcPF, plane );
-        unsigned char *dstp = vsapi->getWritePtr   ( dstPF, plane );
-        const int pitch     = vsapi->getStride     ( dstPF, plane );
-        const int height    = vsapi->getFrameHeight( dstPF, plane );
-        const int width     = vsapi->getFrameWidth ( dstPF, plane );
-        const int heightm1  = height - 1;
-        const int widthm1   = width  - 1;
+        const uint8_t *srcp = vsapi->getReadPtr( srcPF, plane );
+        const uint8_t *pfp  = vsapi->getReadPtr( srcPF, plane );
+        uint8_t  *dstp     = vsapi->getWritePtr   ( dstPF, plane );
+        const int pitch    = vsapi->getStride     ( dstPF, plane );
+        const int height   = vsapi->getFrameHeight( dstPF, plane );
+        const int width    = vsapi->getFrameWidth ( dstPF, plane );
+        const int heightm1 = height - 1;
+        const int widthm1  = width  - 1;
         fill_zero_d( ds->sums->get(),    height * width );
         fill_zero_d( ds->weights->get(), height * width );
         fill_zero_d( ds->wmaxs->get(),   height * width );
@@ -557,8 +557,8 @@ VSFrameRef *TNLMeans::GetFrameWOZ
                     const int startx = u == y ? x+1 : startxt;
                     const int yT = -std::min( std::min( Sy, u ), y );
                     const int yB =  std::min( std::min( Sy, heightm1 - u ), heightm1 - y );
-                    const unsigned char *s1_saved = pfp + (u+yT)*pitch;
-                    const unsigned char *s2_saved = pfp + (y+yT)*pitch + x;
+                    const uint8_t *s1_saved = pfp + (u+yT)*pitch;
+                    const uint8_t *s2_saved = pfp + (y+yT)*pitch + x;
                     const double *gw_saved = gw+(yT+Sy)*Sxd+Sx;
                     const int pfpl  = u * pitch;
                     const int coffy = u * width;
@@ -570,8 +570,8 @@ VSFrameRef *TNLMeans::GetFrameWOZ
                         double *cwmax   = &ds->wmaxs->get()  [coff];
                         const int xL = -std::min( std::min( Sx, v ), x );
                         const int xR =  std::min( std::min( Sx, widthm1 - v ), widthm1 - x );
-                        const unsigned char *s1 = s1_saved + v;
-                        const unsigned char *s2 = s2_saved;
+                        const uint8_t *s1 = s1_saved + v;
+                        const uint8_t *s2 = s2_saved;
                         const double *gwT = gw_saved;
                         double diff = 0.0, gweights = 0.0;
                         for( int j = yT; j <= yB; ++j )
@@ -629,14 +629,14 @@ VSFrameRef *TNLMeans::GetFrameWOZB
     double *gw       = threads[thread].gw->get();
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const unsigned char *srcp = vsapi->getReadPtr( srcPF, plane );
-        const unsigned char *pfp  = vsapi->getReadPtr( srcPF, plane );
-        unsigned char *dstp = vsapi->getWritePtr   ( dstPF, plane );
-        const int pitch     = vsapi->getStride     ( dstPF, plane );
-        const int height    = vsapi->getFrameHeight( dstPF, plane );
-        const int width     = vsapi->getFrameWidth ( dstPF, plane );
-        const int heightm1  = height - 1;
-        const int widthm1   = width  - 1;
+        const uint8_t *srcp = vsapi->getReadPtr( srcPF, plane );
+        const uint8_t *pfp  = vsapi->getReadPtr( srcPF, plane );
+        uint8_t  *dstp     = vsapi->getWritePtr   ( dstPF, plane );
+        const int pitch    = vsapi->getStride     ( dstPF, plane );
+        const int height   = vsapi->getFrameHeight( dstPF, plane );
+        const int width    = vsapi->getFrameWidth ( dstPF, plane );
+        const int heightm1 = height - 1;
+        const int widthm1  = width  - 1;
         double *sumsb_saved    = sumsb    + Bx;
         double *weightsb_saved = weightsb + Bx;
         for( int y = By; y < height + By; y += Byd )
@@ -657,17 +657,17 @@ VSFrameRef *TNLMeans::GetFrameWOZB
                     const int yT  = -std::min( std::min( Sy, u ), y );
                     const int yB  =  std::min( std::min( Sy, heightm1 - u ), heightm1 - y );
                     const int yBb =  std::min( std::min( By, heightm1 - u ), heightm1 - y );
-                    const unsigned char *s1_saved  = pfp + (u+yT)*pitch;
-                    const unsigned char *s2_saved  = pfp + (y+yT)*pitch + x;
-                    const unsigned char *sbp_saved = pfp + (u-By)*pitch;
+                    const uint8_t *s1_saved  = pfp + (u+yT)*pitch;
+                    const uint8_t *s2_saved  = pfp + (y+yT)*pitch + x;
+                    const uint8_t *sbp_saved = pfp + (u-By)*pitch;
                     const double *gw_saved = gw+(yT+Sy)*Sxd+Sx;
                     for( int v = startx; v <= stopx; ++v )
                     {
                         if (u == y && v == x) continue;
                         const int xL = -std::min( std::min( Sx, v ), x );
                         const int xR =  std::min( std::min( Sx, widthm1 - v ), widthm1 - x );
-                        const unsigned char *s1 = s1_saved + v;
-                        const unsigned char *s2 = s2_saved;
+                        const uint8_t *s1 = s1_saved + v;
+                        const uint8_t *s2 = s2_saved;
                         const double *gwT = gw_saved;
                         double diff = 0.0, gweights = 0.0;
                         for(int j = yT; j <= yB; ++j )
@@ -683,7 +683,7 @@ VSFrameRef *TNLMeans::GetFrameWOZB
                         }
                         const double weight = ssd ? GetSSDWeight( diff, gweights ) : GetSADWeight( diff, gweights );
                         const int xRb = std::min( std::min( Bx, widthm1 - v ), widthm1 - x );
-                        const unsigned char *sbp = sbp_saved + v;
+                        const uint8_t *sbp = sbp_saved + v;
                         double *sumsbT    = sumsb_saved;
                         double *weightsbT = weightsb_saved;
                         for( int j = -By; j <= yBb; ++j )
@@ -700,8 +700,8 @@ VSFrameRef *TNLMeans::GetFrameWOZB
                         if( weight > wmax ) wmax = weight;
                     }
                 }
-                const unsigned char *srcpT = srcp + x - Bx;
-                      unsigned char *dstpT = dstp + x - Bx;
+                const uint8_t *srcpT = srcp + x - Bx;
+                      uint8_t *dstpT = dstp + x - Bx;
                 double *sumsbTr    = sumsb;
                 double *weightsbTr = weightsb;
                 if( wmax <= std::numeric_limits<double>::epsilon() ) wmax = 1.0;
