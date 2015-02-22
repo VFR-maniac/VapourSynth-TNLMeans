@@ -47,7 +47,6 @@ TNLMeans::TNLMeans
     vi   = *vsapi->getVideoInfo( node );
     numThreads = vsapi->getCoreInfo( core )->numThreads;
     if( vi.format->colorFamily == cmCompat ) { throw bad_param{ "only planar formats are supported" }; }
-    if( vi.format->bitsPerSample != 8 )      { throw bad_param{ "only 8-bit formats are supported" }; }
     if( h <= 0.0 ) { throw bad_param{ "h must be greater than 0" }; }
     if( a <= 0.0 ) { throw bad_param{ "a must be greater than 0" }; }
     if( Ax < 0 )   { throw bad_param{ "ax must be greater than or equal to 0" }; }
@@ -145,31 +144,13 @@ void TNLMeans::RequestFrame
         vsapi->requestFrameFilter( mapn( i ), node, frame_ctx );
 }
 
-VSFrameRef *TNLMeans::newVideoFrame
+template < int ssd, typename pixel >
+void TNLMeans::GetFrameByMethod
 (
     int             n,
-    VSFrameContext *frame_ctx,
-    VSCore         *core,
-    const VSAPI    *vsapi
-)
-{
-    const VSFrameRef *src = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
-    VSFrameRef *dst = vsapi->newVideoFrame
-    (
-        vsapi->getFrameFormat( src ),
-        vsapi->getFrameWidth ( src, 0 ),
-        vsapi->getFrameHeight( src, 0 ),
-        src, core
-    );
-    vsapi->freeFrame( src );
-    return dst;
-}
-
-template < int ssd >
-VSFrameRef *TNLMeans::GetFrameByMethod
-(
-    int             n,
-    int             thread,
+    const int       threadId,
+    const int       peak,
+    VSFrameRef     *dst,
     VSFrameContext *frame_ctx,
     VSCore         *core,
     const VSAPI    *vsapi
@@ -178,16 +159,16 @@ VSFrameRef *TNLMeans::GetFrameByMethod
     if( Az )
     {
         if( Bx || By )
-            return GetFrameWZB< ssd >( n, thread, frame_ctx, core, vsapi );
+            GetFrameWZB< ssd, pixel >( n, threadId, peak, dst, frame_ctx, core, vsapi );
         else
-            return GetFrameWZ< ssd >( n, thread, frame_ctx, core, vsapi );
+            GetFrameWZ< ssd, pixel >( n, threadId, peak, dst, frame_ctx, core, vsapi );
     }
     else
     {
         if( Bx || By )
-            return GetFrameWOZB< ssd >( n, thread, frame_ctx, core, vsapi );
+            GetFrameWOZB< ssd, pixel >( n, threadId, peak, dst, frame_ctx, core, vsapi );
         else
-            return GetFrameWOZ< ssd >( n, thread, frame_ctx, core, vsapi );
+            GetFrameWOZ< ssd, pixel >( n, threadId, peak, dst, frame_ctx, core, vsapi );
     }
 }
 
@@ -199,6 +180,7 @@ VSFrameRef *TNLMeans::GetFrame
     const VSAPI    *vsapi
 )
 {
+    /* Activate an inactive thread. */
     int threadId = -1;
     do
     {
@@ -212,28 +194,74 @@ VSFrameRef *TNLMeans::GetFrame
             }
     } while( threadId == -1 );
 
-    VSFrameRef *dst;
-    if( ssd )
-        dst = GetFrameByMethod< 1 >( n, threadId, frame_ctx, core, vsapi );
+    int peak;
+    VSFrameRef *dst = nullptr;
+    const VSFrameRef *src = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
+    if( src )
+    {
+        const int bps = vsapi->getFrameFormat( src )->bitsPerSample;
+        if( bps <= 0 || bps > 16 )
+        {
+            vsapi->freeFrame( src );
+            vsapi->setFilterError( "TNLMeans:  bitsPerSample must be 1 to 16!", frame_ctx );
+            goto fail;
+        }
+        peak = GetPixelMaxValue( bps );
+    }
     else
-        dst = GetFrameByMethod< 0 >( n, threadId, frame_ctx, core, vsapi );
+    {
+        vsapi->setFilterError( "TNLMeans:  getFrameFilter failure (src)!", frame_ctx );
+        goto fail;
+    }
 
+    dst = vsapi->newVideoFrame
+    (
+        vsapi->getFrameFormat( src ),
+        vsapi->getFrameWidth ( src, 0 ),
+        vsapi->getFrameHeight( src, 0 ),
+        src, core
+    );
+    vsapi->freeFrame( src );
+    if( dst == nullptr )
+    {
+        vsapi->setFilterError( "TNLMeans:  newVideoFrame failure (dst)!", frame_ctx );
+        goto fail;
+    }
+
+    if( peak <= 255 )
+    {
+        if( ssd )
+            GetFrameByMethod< 1, uint8_t >( n, threadId, peak, dst, frame_ctx, core, vsapi );
+        else
+            GetFrameByMethod< 0, uint8_t >( n, threadId, peak, dst, frame_ctx, core, vsapi );
+    }
+    else
+    {
+        if( ssd )
+            GetFrameByMethod< 1, uint16_t >( n, threadId, peak, dst, frame_ctx, core, vsapi );
+        else
+            GetFrameByMethod< 0, uint16_t >( n, threadId, peak, dst, frame_ctx, core, vsapi );
+    }
+
+fail:
     threads[threadId].active = 0;
     return dst;
 }
 
-template < int ssd >
-VSFrameRef *TNLMeans::GetFrameWZ
+template < int ssd, typename pixel >
+void TNLMeans::GetFrameWZ
 (
     int             n,
-    int             thread,
+    const int       threadId,
+    const int       peak,
+    VSFrameRef     *dstPF,
     VSFrameContext *frame_ctx,
     VSCore         *core,
     const VSAPI    *vsapi
 )
 {
-    nlCache *fc = threads[thread].fc;
-    double  *gw = threads[thread].gw->get();
+    nlCache *fc = threads[threadId].fc;
+    double  *gw = threads[threadId].gw->get();
     fc->resetCacheStart( n - Az, n + Az );
     for( int i = n - Az; i <= n + Az; ++i )
     {
@@ -246,18 +274,12 @@ VSFrameRef *TNLMeans::GetFrameWZ
             fc->clearDS( nl );
         }
     }
-    VSFrameRef *dstPF = newVideoFrame( n, frame_ctx, core, vsapi );
-    if( dstPF == nullptr )
-    {
-        vsapi->setFilterError( "TNLMeans:  frame allocation failure (dstPF)!", frame_ctx );
-        return nullptr;
-    }
-    std::unique_ptr< AlignedArrayObject< const uint8_t *, 16 > > _pfplut( new AlignedArrayObject< const uint8_t *, 16 >{ fc->size } );
-    std::unique_ptr< AlignedArrayObject< const SDATA   *, 16 > > _dslut ( new AlignedArrayObject< const SDATA   *, 16 >{ fc->size } );
-    std::unique_ptr< AlignedArrayObject<       int     *, 16 > > _dsalut( new AlignedArrayObject<       int     *, 16 >{ fc->size } );
-    const uint8_t **pfplut = _pfplut.get()->get();
-    const SDATA   **dslut  = _dslut.get()->get();
-    int           **dsalut = _dsalut.get()->get();
+    std::unique_ptr< AlignedArrayObject< const pixel *, 16 > > _pfplut( new AlignedArrayObject< const pixel *, 16 >{ fc->size } );
+    std::unique_ptr< AlignedArrayObject< const SDATA *, 16 > > _dslut ( new AlignedArrayObject< const SDATA *, 16 >{ fc->size } );
+    std::unique_ptr< AlignedArrayObject<       int   *, 16 > > _dsalut( new AlignedArrayObject<       int   *, 16 >{ fc->size } );
+    const pixel **pfplut = _pfplut.get()->get();
+    const SDATA **dslut  = _dslut.get()->get();
+    int         **dsalut = _dsalut.get()->get();
     for( int i = 0; i < fc->size; ++i )
         dsalut[i] = fc->frames[fc->getCachePos( i )]->dsa;
     int *ddsa = dsalut[Az];
@@ -266,9 +288,9 @@ VSFrameRef *TNLMeans::GetFrameWZ
     const int stopz  = Az + std::min( vi.numFrames - n - 1, Az );
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const uint8_t *srcp = vsapi->getReadPtr( srcPF, plane );
-        const uint8_t *pf2p = vsapi->getReadPtr( srcPF, plane );
-        uint8_t  *dstp     = vsapi->getWritePtr   ( dstPF, plane );
+        const pixel *srcp = reinterpret_cast<const pixel *>(vsapi->getReadPtr( srcPF, plane ));
+        const pixel *pf2p = reinterpret_cast<const pixel *>(vsapi->getReadPtr( srcPF, plane ));
+        pixel    *dstp     = reinterpret_cast<pixel *>(vsapi->getWritePtr( dstPF, plane ));
         const int pitch    = vsapi->getStride     ( dstPF, plane );
         const int height   = vsapi->getFrameHeight( dstPF, plane );
         const int width    = vsapi->getFrameWidth ( dstPF, plane );
@@ -277,7 +299,7 @@ VSFrameRef *TNLMeans::GetFrameWZ
         for( int i = 0; i < fc->size; ++i )
         {
             const int pos = fc->getCachePos( i );
-            pfplut[i] = vsapi->getReadPtr( fc->frames[pos]->pf, plane );
+            pfplut[i] = reinterpret_cast<const pixel *>(vsapi->getReadPtr( fc->frames[pos]->pf, plane ));
             dslut [i] = fc->frames[pos]->ds[plane];
         }
         const SDATA *dds = dslut[Az];
@@ -301,17 +323,17 @@ VSFrameRef *TNLMeans::GetFrameWZ
                     const int starty = (z == Az) ? y : startyt;
                     const SDATA *cds = dslut[z];
                     int *cdsa = dsalut[z];
-                    const uint8_t *pf1p = pfplut[z];
+                    const pixel *pf1p = pfplut[z];
                     for( int u = starty; u <= stopy; ++u )
                     {
                         const int startx = (u == y && z == Az) ? x+1 : startxt;
                         const int yT = -std::min( std::min( Sy, u ), y );
                         const int yB =  std::min( std::min( Sy, heightm1 - u ), heightm1 - y );
-                        const uint8_t *s1_saved = pf1p + (u+yT)*pitch;
-                        const uint8_t *s2_saved = pf2p + (y+yT)*pitch + x;
+                        const pixel *s1_saved = GetPixel( pf1p,     (u+yT)*pitch );
+                        const pixel *s2_saved = GetPixel( pf2p + x, (y+yT)*pitch );
                         const double *gw_saved = gw+(yT+Sy)*Sxd+Sx;
-                        const int pf1pl = u*pitch;
-                        const int coffy = u*width;
+                        const int pf1pl = u * pitch;
+                        const int coffy = u * width;
                         for( int v = startx; v <= stopx; ++v )
                         {
                             const int coff = coffy + v;
@@ -320,8 +342,8 @@ VSFrameRef *TNLMeans::GetFrameWZ
                             double *cwmax   = &cds->wmaxs->get()  [coff];
                             const int xL = -std::min( std::min( Sx, v ), x );
                             const int xR =  std::min( std::min( Sx, widthm1 - v ), widthm1 - x );
-                            const uint8_t *s1 = s1_saved + v;
-                            const uint8_t *s2 = s2_saved;
+                            const pixel *s1 = s1_saved + v;
+                            const pixel *s2 = s2_saved;
                             const double *gwT = gw_saved;
                             double diff = 0.0, gweights = 0.0;
                             for( int j = yT; j <= yB; ++j )
@@ -331,30 +353,30 @@ VSFrameRef *TNLMeans::GetFrameWZ
                                     diff     += ssd ? GetSSD( s1, s2, gwT, k ) : GetSAD( s1, s2, gwT, k );
                                     gweights += gwT[k];
                                 }
-                                s1  += pitch;
-                                s2  += pitch;
+                                ForwardPointer( s1, pitch );
+                                ForwardPointer( s2, pitch );
                                 gwT += Sxd;
                             }
                             const double weight = ssd ? GetSSDWeight( diff, gweights ) : GetSADWeight( diff, gweights );
                             *dweight += weight;
-                            *dsum    += pf1p[pf1pl+v]*weight;
+                            *dsum    += weight*GetPixelValue( pf1p + v, pf1pl );
                             if( weight > *dwmax ) *dwmax = weight;
                             if( cdsa[Azdm1-z] != 1 )
                             {
                                 *cweight += weight;
-                                *csum    += srcp[x]*weight;
+                                *csum    += weight*srcp[x];
                                 if( weight > *cwmax ) *cwmax = weight;
                             }
                         }
                     }
                 }
                 const double wmax = *dwmax <= std::numeric_limits<double>::epsilon() ? 1.0 : *dwmax;
-                *dsum    += srcp[x]*wmax;
+                *dsum    += wmax*srcp[x];
                 *dweight += wmax;
-                dstp[x] = std::max( std::min( int(((*dsum) / (*dweight)) + 0.5), 255 ), 0 );
+                dstp[x] = std::max( std::min( int(((*dsum) / (*dweight)) + 0.5), peak ), 0 );
             }
-            dstp += pitch;
-            srcp += pitch;
+            ForwardPointer( dstp, pitch );
+            ForwardPointer( srcp, pitch );
         }
     }
     int j = fc->size - 1;
@@ -363,23 +385,24 @@ VSFrameRef *TNLMeans::GetFrameWZ
         int *cdsa = fc->frames[fc->getCachePos( i )]->dsa;
         if( ddsa[i] == 2 ) ddsa[i] = cdsa[j] = 1;
     }
-    return dstPF;
 }
 
-template < int ssd >
-VSFrameRef *TNLMeans::GetFrameWZB
+template < int ssd, typename pixel >
+void TNLMeans::GetFrameWZB
 (
     int             n,
-    int             thread,
+    const int       threadId,
+    const int       peak,
+    VSFrameRef     *dstPF,
     VSFrameContext *frame_ctx,
     VSCore         *core,
     const VSAPI    *vsapi
 )
 {
-    nlCache *fc       = threads[thread].fc;
-    double  *sumsb    = threads[thread].sumsb->get();
-    double  *weightsb = threads[thread].weightsb->get();
-    double  *gw       = threads[thread].gw->get();
+    nlCache *fc       = threads[threadId].fc;
+    double  *sumsb    = threads[threadId].sumsb->get();
+    double  *weightsb = threads[threadId].weightsb->get();
+    double  *gw       = threads[threadId].gw->get();
     fc->resetCacheStart( n - Az, n + Az );
     for( int i = n - Az; i <= n + Az; ++i )
     {
@@ -391,22 +414,16 @@ VSFrameRef *TNLMeans::GetFrameWZB
             nl->setFNum( i );
         }
     }
-    std::unique_ptr< AlignedArrayObject< const uint8_t *, 16 > > _pfplut( new AlignedArrayObject< const uint8_t *, 16 >{ fc->size } );
-    const uint8_t **pfplut = _pfplut.get()->get();
-    VSFrameRef *dstPF = newVideoFrame( n, frame_ctx, core, vsapi );
-    if( dstPF == nullptr )
-    {
-        vsapi->setFilterError( "TNLMeans:  frame allocation failure (dstPF)!", frame_ctx );
-        return nullptr;
-    }
+    std::unique_ptr< AlignedArrayObject< const pixel *, 16 > > _pfplut( new AlignedArrayObject< const pixel *, 16 >{ fc->size } );
+    const pixel **pfplut = _pfplut.get()->get();
     const VSFrameRef *srcPF = fc->frames[fc->getCachePos( Az )]->pf;
     const int startz = Az - std::min( n, Az );
     const int stopz  = Az + std::min( vi.numFrames - n - 1, Az );
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const uint8_t *srcp = vsapi->getReadPtr( srcPF, plane );
-        const uint8_t *pf2p = vsapi->getReadPtr( srcPF, plane );
-        uint8_t  *dstp     = vsapi->getWritePtr   ( dstPF, plane );
+        const pixel *srcp = reinterpret_cast<const pixel *>(vsapi->getReadPtr( srcPF, plane ));
+        const pixel *pf2p = reinterpret_cast<const pixel *>(vsapi->getReadPtr( srcPF, plane ));
+        pixel    *dstp     = reinterpret_cast<pixel *>(vsapi->getWritePtr( dstPF, plane ));
         const int pitch    = vsapi->getStride     ( dstPF, plane );
         const int height   = vsapi->getFrameHeight( dstPF, plane );
         const int width    = vsapi->getFrameWidth ( dstPF, plane );
@@ -415,7 +432,7 @@ VSFrameRef *TNLMeans::GetFrameWZB
         double *sumsb_saved    = sumsb    + Bx;
         double *weightsb_saved = weightsb + Bx;
         for( int i = 0; i < fc->size; ++i )
-            pfplut[i] = vsapi->getReadPtr( fc->frames[fc->getCachePos( i )]->pf, plane );
+            pfplut[i] = reinterpret_cast<const pixel *>(vsapi->getReadPtr( fc->frames[fc->getCachePos( i )]->pf, plane ));
         for( int y = By; y < height + By; y += Byd )
         {
             const int starty = std::max( y - Ay, By );
@@ -431,24 +448,24 @@ VSFrameRef *TNLMeans::GetFrameWZB
                 const int xTr    = std::min( Bxd,  width - x + Bx );
                 for( int z = startz; z <= stopz; ++z )
                 {
-                    const uint8_t *pf1p = pfplut[z];
+                    const pixel *pf1p = pfplut[z];
                     for( int u = starty; u <= stopy; ++u )
                     {
                         const int yT  = -std::min( std::min( Sy, u ), y );
                         const int yB  =  std::min( std::min( Sy, heightm1 - u ), heightm1 - y );
                         const int yBb =  std::min( std::min( By, heightm1 - u ), heightm1 - y );
-                        const uint8_t *s1_saved  = pf1p + (u+yT)*pitch;
-                        const uint8_t *s2_saved  = pf2p + (y+yT)*pitch + x;
-                        const uint8_t *sbp_saved = pf1p + (u-By)*pitch;
+                        const pixel *s1_saved  = GetPixel( pf1p,     (u+yT)*pitch );
+                        const pixel *s2_saved  = GetPixel( pf2p + x, (y+yT)*pitch );
+                        const pixel *sbp_saved = GetPixel( pf1p,     (u-By)*pitch );
                         const double *gw_saved = gw+(yT+Sy)*Sxd+Sx;
                         //const int pf1pl = u*pitch;
                         for( int v = startx; v <= stopx; ++v )
                         {
                             if( z == Az && u == y && v == x ) continue;
                             const int xL = -std::min( std::min( Sx, v ), x );
-                            const int xR =  std::min( std::min( Sx, widthm1 - v), widthm1 - x );
-                            const uint8_t *s1 = s1_saved + v;
-                            const uint8_t *s2 = s2_saved;
+                            const int xR =  std::min( std::min( Sx, widthm1 - v ), widthm1 - x );
+                            const pixel *s1 = s1_saved + v;
+                            const pixel *s2 = s2_saved;
                             const double *gwT = gw_saved;
                             double diff = 0.0, gweights = 0.0;
                             for( int j = yT; j <= yB; ++j )
@@ -458,13 +475,13 @@ VSFrameRef *TNLMeans::GetFrameWZB
                                     diff     += ssd ? GetSSD( s1, s2, gwT, k ) : GetSAD( s1, s2, gwT, k );
                                     gweights += gwT[k];
                                 }
-                                s1  += pitch;
-                                s2  += pitch;
+                                ForwardPointer( s1, pitch );
+                                ForwardPointer( s2, pitch );
                                 gwT += Sxd;
                             }
                             const double weight = ssd ? GetSSDWeight( diff, gweights ) : GetSADWeight( diff, gweights );
                             const int xRb = std::min( std::min( Bx, widthm1 - v ), widthm1 - x );
-                            const uint8_t *sbp = sbp_saved + v;
+                            const pixel *sbp = sbp_saved + v;
                             double *sumsbT    = sumsb_saved;
                             double *weightsbT = weightsb_saved;
                             for( int j = -By; j <= yBb; ++j )
@@ -474,7 +491,7 @@ VSFrameRef *TNLMeans::GetFrameWZB
                                     sumsbT   [k] += sbp[k]*weight;
                                     weightsbT[k] += weight;
                                 }
-                                sbp       += pitch;
+                                ForwardPointer( sbp, pitch );
                                 sumsbT    += Bxd;
                                 weightsbT += Bxd;
                             }
@@ -482,56 +499,52 @@ VSFrameRef *TNLMeans::GetFrameWZB
                         }
                     }
                 }
-                const uint8_t *srcpT = srcp + x - Bx;
-                      uint8_t *dstpT = dstp + x - Bx;
+                const pixel *srcpT = srcp + x - Bx;
+                      pixel *dstpT = dstp + x - Bx;
                 double *sumsbTr    = sumsb;
                 double *weightsbTr = weightsb;
-                if( wmax <= std::numeric_limits<double>::epsilon() ) wmax = 1.0;
+                if( wmax <= std::numeric_limits<double>::epsilon() )
+                    wmax = 1.0;
                 for( int j = 0; j < yTr; ++j )
                 {
                     for( int k = 0; k < xTr; ++k )
                     {
                         sumsbTr   [k] += srcpT[k]*wmax;
                         weightsbTr[k] += wmax;
-                        dstpT     [k] = std::max( std::min( int((sumsbTr[k] / weightsbTr[k]) + 0.5), 255 ),0 );
+                        dstpT     [k] = std::max( std::min( int((sumsbTr[k] / weightsbTr[k]) + 0.5), peak ), 0 );
                     }
-                    srcpT      += pitch;
-                    dstpT      += pitch;
+                    ForwardPointer( srcpT, pitch );
+                    ForwardPointer( dstpT, pitch );
                     sumsbTr    += Bxd;
                     weightsbTr += Bxd;
                 }
             }
-            dstp += pitch*Byd;
-            srcp += pitch*Byd;
+            ForwardPointer( dstp, pitch*Byd );
+            ForwardPointer( srcp, pitch*Byd );
         }
     }
-    return dstPF;
 }
 
-template < int ssd >
-VSFrameRef *TNLMeans::GetFrameWOZ
+template < int ssd, typename pixel >
+void TNLMeans::GetFrameWOZ
 (
     int             n,
-    int             thread,
+    const int       threadId,
+    const int       peak,
+    VSFrameRef     *dstPF,
     VSFrameContext *frame_ctx,
     VSCore         *core,
     const VSAPI    *vsapi
 )
 {
-    VSFrameRef *dstPF = newVideoFrame( n, frame_ctx, core, vsapi );
-    if( dstPF == nullptr )
-    {
-        vsapi->setFilterError( "TNLMeans:  frame allocation failure (dstPF)!", frame_ctx );
-        return nullptr;
-    }
     const VSFrameRef *srcPF = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
-    SDATA  *ds = threads[thread].ds;
-    double *gw = threads[thread].gw->get();
+    SDATA  *ds = threads[threadId].ds;
+    double *gw = threads[threadId].gw->get();
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const uint8_t *srcp = vsapi->getReadPtr( srcPF, plane );
-        const uint8_t *pfp  = vsapi->getReadPtr( srcPF, plane );
-        uint8_t  *dstp     = vsapi->getWritePtr   ( dstPF, plane );
+        const pixel *srcp = reinterpret_cast<const pixel *>(vsapi->getReadPtr( srcPF, plane ));
+        const pixel *pfp  = reinterpret_cast<const pixel *>(vsapi->getReadPtr( srcPF, plane ));
+        pixel    *dstp     = reinterpret_cast<pixel *>(vsapi->getWritePtr( dstPF, plane ));
         const int pitch    = vsapi->getStride     ( dstPF, plane );
         const int height   = vsapi->getFrameHeight( dstPF, plane );
         const int width    = vsapi->getFrameWidth ( dstPF, plane );
@@ -557,8 +570,8 @@ VSFrameRef *TNLMeans::GetFrameWOZ
                     const int startx = u == y ? x+1 : startxt;
                     const int yT = -std::min( std::min( Sy, u ), y );
                     const int yB =  std::min( std::min( Sy, heightm1 - u ), heightm1 - y );
-                    const uint8_t *s1_saved = pfp + (u+yT)*pitch;
-                    const uint8_t *s2_saved = pfp + (y+yT)*pitch + x;
+                    const pixel *s1_saved = GetPixel( pfp,     (u+yT)*pitch );
+                    const pixel *s2_saved = GetPixel( pfp + x, (y+yT)*pitch );
                     const double *gw_saved = gw+(yT+Sy)*Sxd+Sx;
                     const int pfpl  = u * pitch;
                     const int coffy = u * width;
@@ -570,8 +583,8 @@ VSFrameRef *TNLMeans::GetFrameWOZ
                         double *cwmax   = &ds->wmaxs->get()  [coff];
                         const int xL = -std::min( std::min( Sx, v ), x );
                         const int xR =  std::min( std::min( Sx, widthm1 - v ), widthm1 - x );
-                        const uint8_t *s1 = s1_saved + v;
-                        const uint8_t *s2 = s2_saved;
+                        const pixel *s1 = s1_saved + v;
+                        const pixel *s2 = s2_saved;
                         const double *gwT = gw_saved;
                         double diff = 0.0, gweights = 0.0;
                         for( int j = yT; j <= yB; ++j )
@@ -581,57 +594,52 @@ VSFrameRef *TNLMeans::GetFrameWOZ
                                 diff     += ssd ? GetSSD( s1, s2, gwT, k ) : GetSAD( s1, s2, gwT, k );
                                 gweights += gwT[k];
                             }
-                            s1  += pitch;
-                            s2  += pitch;
+                            ForwardPointer( s1, pitch );
+                            ForwardPointer( s2, pitch );
                             gwT += Sxd;
                         }
                         const double weight = ssd ? GetSSDWeight( diff, gweights ) : GetSADWeight( diff, gweights );
                         *cweight += weight;
                         *dweight += weight;
-                        *csum += srcp[x]     * weight;
-                        *dsum += pfp[pfpl+v] * weight;
+                        *csum += weight * srcp[x];
+                        *dsum += weight * GetPixelValue( pfp + v, pfpl );
                         if( weight > *cwmax ) *cwmax = weight;
                         if( weight > *dwmax ) *dwmax = weight;
                     }
                 }
                 const double wmax = *dwmax <= std::numeric_limits<double>::epsilon() ? 1.0 : *dwmax;
-                *dsum    += srcp[x]*wmax;
+                *dsum    += wmax*srcp[x];
                 *dweight += wmax;
-                dstp[x] = std::max( std::min( int(((*dsum) / (*dweight)) + 0.5), 255 ), 0 );
+                dstp[x] = std::max( std::min( int(((*dsum) / (*dweight)) + 0.5), peak ), 0 );
             }
-            dstp += pitch;
-            srcp += pitch;
+            ForwardPointer( dstp, pitch );
+            ForwardPointer( srcp, pitch );
         }
     }
     vsapi->freeFrame( srcPF );
-    return dstPF;
 }
 
-template < int ssd >
-VSFrameRef *TNLMeans::GetFrameWOZB
+template < int ssd, typename pixel >
+void TNLMeans::GetFrameWOZB
 (
     int             n,
-    int             thread,
+    const int       threadId,
+    const int       peak,
+    VSFrameRef     *dstPF,
     VSFrameContext *frame_ctx,
     VSCore         *core,
     const VSAPI    *vsapi
 )
 {
-    VSFrameRef *dstPF = newVideoFrame( n, frame_ctx, core, vsapi );
-    if( dstPF == nullptr )
-    {
-        vsapi->setFilterError( "TNLMeans:  frame allocation failure (dstPF)!", frame_ctx );
-        return nullptr;
-    }
     const VSFrameRef *srcPF = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
-    double *sumsb    = threads[thread].sumsb->get();
-    double *weightsb = threads[thread].weightsb->get();
-    double *gw       = threads[thread].gw->get();
+    double *sumsb    = threads[threadId].sumsb->get();
+    double *weightsb = threads[threadId].weightsb->get();
+    double *gw       = threads[threadId].gw->get();
     for( int plane = 0; plane < vi.format->numPlanes; ++plane )
     {
-        const uint8_t *srcp = vsapi->getReadPtr( srcPF, plane );
-        const uint8_t *pfp  = vsapi->getReadPtr( srcPF, plane );
-        uint8_t  *dstp     = vsapi->getWritePtr   ( dstPF, plane );
+        const pixel *srcp = reinterpret_cast<const pixel *>(vsapi->getReadPtr( srcPF, plane ));
+        const pixel *pfp  = reinterpret_cast<const pixel *>(vsapi->getReadPtr( srcPF, plane ));
+        pixel    *dstp     = reinterpret_cast<pixel *>(vsapi->getWritePtr( dstPF, plane ));
         const int pitch    = vsapi->getStride     ( dstPF, plane );
         const int height   = vsapi->getFrameHeight( dstPF, plane );
         const int width    = vsapi->getFrameWidth ( dstPF, plane );
@@ -657,33 +665,33 @@ VSFrameRef *TNLMeans::GetFrameWOZB
                     const int yT  = -std::min( std::min( Sy, u ), y );
                     const int yB  =  std::min( std::min( Sy, heightm1 - u ), heightm1 - y );
                     const int yBb =  std::min( std::min( By, heightm1 - u ), heightm1 - y );
-                    const uint8_t *s1_saved  = pfp + (u+yT)*pitch;
-                    const uint8_t *s2_saved  = pfp + (y+yT)*pitch + x;
-                    const uint8_t *sbp_saved = pfp + (u-By)*pitch;
+                    const pixel *s1_saved  = GetPixel( pfp,     (u+yT)*pitch );
+                    const pixel *s2_saved  = GetPixel( pfp + x, (y+yT)*pitch );
+                    const pixel *sbp_saved = GetPixel( pfp,     (u-By)*pitch );
                     const double *gw_saved = gw+(yT+Sy)*Sxd+Sx;
                     for( int v = startx; v <= stopx; ++v )
                     {
                         if (u == y && v == x) continue;
                         const int xL = -std::min( std::min( Sx, v ), x );
                         const int xR =  std::min( std::min( Sx, widthm1 - v ), widthm1 - x );
-                        const uint8_t *s1 = s1_saved + v;
-                        const uint8_t *s2 = s2_saved;
+                        const pixel *s1 = s1_saved + v;
+                        const pixel *s2 = s2_saved;
                         const double *gwT = gw_saved;
                         double diff = 0.0, gweights = 0.0;
-                        for(int j = yT; j <= yB; ++j )
+                        for( int j = yT; j <= yB; ++j )
                         {
                             for( int k = xL; k <= xR; ++k )
                             {
                                 diff     += ssd ? GetSSD( s1, s2, gwT, k ) : GetSAD( s1, s2, gwT, k );
                                 gweights += gwT[k];
                             }
-                            s1  += pitch;
-                            s2  += pitch;
+                            ForwardPointer( s1, pitch );
+                            ForwardPointer( s2, pitch );
                             gwT += Sxd;
                         }
                         const double weight = ssd ? GetSSDWeight( diff, gweights ) : GetSADWeight( diff, gweights );
                         const int xRb = std::min( std::min( Bx, widthm1 - v ), widthm1 - x );
-                        const uint8_t *sbp = sbp_saved + v;
+                        const pixel *sbp = sbp_saved + v;
                         double *sumsbT    = sumsb_saved;
                         double *weightsbT = weightsb_saved;
                         for( int j = -By; j <= yBb; ++j )
@@ -695,36 +703,36 @@ VSFrameRef *TNLMeans::GetFrameWOZB
                             }
                             sumsbT    += Bxd;
                             weightsbT += Bxd;
-                            sbp += pitch;
+                            ForwardPointer( sbp, pitch );
                         }
                         if( weight > wmax ) wmax = weight;
                     }
                 }
-                const uint8_t *srcpT = srcp + x - Bx;
-                      uint8_t *dstpT = dstp + x - Bx;
+                const pixel *srcpT = srcp + x - Bx;
+                      pixel *dstpT = dstp + x - Bx;
                 double *sumsbTr    = sumsb;
                 double *weightsbTr = weightsb;
-                if( wmax <= std::numeric_limits<double>::epsilon() ) wmax = 1.0;
+                if( wmax <= std::numeric_limits<double>::epsilon() )
+                    wmax = 1.0;
                 for( int j = 0; j < yTr; ++j )
                 {
                     for( int k = 0; k < xTr; ++k )
                     {
                         sumsbTr   [k] += srcpT[k]*wmax;
                         weightsbTr[k] += wmax;
-                        dstpT     [k] = std::max( std::min( int((sumsbTr[k] / weightsbTr[k]) + 0.5), 255 ), 0 );
+                        dstpT     [k] = std::max( std::min( int((sumsbTr[k] / weightsbTr[k]) + 0.5), peak ), 0 );
                     }
-                    srcpT += pitch;
-                    dstpT += pitch;
+                    ForwardPointer( srcpT, pitch );
+                    ForwardPointer( dstpT, pitch );
                     sumsbTr    += Bxd;
                     weightsbTr += Bxd;
                 }
             }
-            dstp += pitch*Byd;
-            srcp += pitch*Byd;
+            ForwardPointer( dstp, pitch*Byd );
+            ForwardPointer( srcp, pitch*Byd );
         }
     }
     vsapi->freeFrame( srcPF );
-    return dstPF;
 }
 
 int TNLMeans::mapn( int n )

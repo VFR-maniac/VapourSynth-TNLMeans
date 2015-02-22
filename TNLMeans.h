@@ -114,16 +114,25 @@ private:
     nlThread *threads;
     std::mutex mtx;
     int mapn( int n );
-    inline double GetSSD( const uint8_t *s1, const uint8_t *s2, const double *gwT, const int k ) { return (s1[k] - s2[k]) * (s1[k] - s2[k]) * gwT[k]; }
-    inline double GetSAD( const uint8_t *s1, const uint8_t *s2, const double *gwT, const int k ) { return std::abs( s1[k] - s2[k] ) * gwT[k]; }
-    inline double GetSSDWeight( const double diff, const double gweights ) { return std::exp( (diff / gweights) * h2in ); }
-    inline double GetSADWeight( const double diff, const double gweights ) { return std::exp( (diff / gweights) * hin ); }
-    VSFrameRef *newVideoFrame( int n, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
-    template < int ssd > VSFrameRef *GetFrameByMethod( int n, int thread, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
-    template < int ssd > VSFrameRef *GetFrameWZ      ( int n, int thread, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
-    template < int ssd > VSFrameRef *GetFrameWZB     ( int n, int thread, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
-    template < int ssd > VSFrameRef *GetFrameWOZ     ( int n, int thread, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
-    template < int ssd > VSFrameRef *GetFrameWOZB    ( int n, int thread, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
+    template < typename pixel > inline double GetSSD( const pixel * &s1, const pixel * &s2, const double * &gwT, const int &k ) { return (s1[k] - s2[k]) * (s1[k] - s2[k]) * gwT[k]; }
+    template < typename pixel > inline double GetSAD( const pixel * &s1, const pixel * &s2, const double * &gwT, const int &k ) { return std::abs( s1[k] - s2[k] ) * gwT[k]; }
+    inline double GetSSDWeight( const double &diff, const double &gweights ) { return std::exp( (diff / gweights) * h2in ); }
+    inline double GetSADWeight( const double &diff, const double &gweights ) { return std::exp( (diff / gweights) * hin ); }
+    template < int ssd, typename pixel > void GetFrameByMethod( int n, const int threadId, const int peak, VSFrameRef *dst, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
+    template < int ssd, typename pixel > void GetFrameWZ      ( int n, const int threadId, const int peak, VSFrameRef *dst, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
+    template < int ssd, typename pixel > void GetFrameWZB     ( int n, const int threadId, const int peak, VSFrameRef *dst, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
+    template < int ssd, typename pixel > void GetFrameWOZ     ( int n, const int threadId, const int peak, VSFrameRef *dst, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
+    template < int ssd, typename pixel > void GetFrameWOZB    ( int n, const int threadId, const int peak, VSFrameRef *dst, VSFrameContext *frame_ctx, VSCore *core, const VSAPI *vsapi );
+    template < typename T > inline void ForwardPointer(       T * &p, const int offset ) { p = reinterpret_cast<      T *>(reinterpret_cast<      uint8_t *>(p) + offset); }
+    template < typename T > inline void ForwardPointer( const T * &p, const int offset ) { p = reinterpret_cast<const T *>(reinterpret_cast<const uint8_t *>(p) + offset); }
+    template < typename pixel > inline       pixel *GetPixel(       pixel *p, const int offset ) { return reinterpret_cast<      pixel *>(reinterpret_cast<      uint8_t *>(p) + offset); }
+    template < typename pixel > inline const pixel *GetPixel( const pixel *p, const int offset ) { return reinterpret_cast<const pixel *>(reinterpret_cast<const uint8_t *>(p) + offset); }
+    template < typename pixel > inline const pixel GetPixelValue( const pixel *p, const int offset ) { return *reinterpret_cast<const pixel *>(reinterpret_cast<const uint8_t *>(p) + offset); }
+    inline const int GetPixelMaxValue( const int bps )
+    {
+        static constexpr int peak[16] = { 1, 3, 7, 15, 31, 63, 127, 255, 511, 1023, 2047, 4095, 8191, 16383, 32767, 65535 };
+        return peak[bps - 1];
+    }
 
 public:
     VSVideoInfo vi;
