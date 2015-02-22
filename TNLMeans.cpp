@@ -46,18 +46,18 @@ TNLMeans::TNLMeans
     node =  vsapi->propGetNode( in, "clip", 0, 0 );
     vi   = *vsapi->getVideoInfo( node );
     numThreads = vsapi->getCoreInfo( core )->numThreads;
-    if( vi.format->colorFamily == cmCompat ) { throw bad_param{ "only planar formats are supported" }; }
-    if( h <= 0.0 ) { throw bad_param{ "h must be greater than 0" }; }
-    if( a <= 0.0 ) { throw bad_param{ "a must be greater than 0" }; }
-    if( Ax < 0 )   { throw bad_param{ "ax must be greater than or equal to 0" }; }
-    if( Ay < 0 )   { throw bad_param{ "ay must be greater than or equal to 0" }; }
-    if( Az < 0 )   { throw bad_param{ "az must be greater than or equal to 0" }; }
-    if( Bx < 0 )   { throw bad_param{ "bx must be greater than or equal to 0" }; }
-    if( By < 0 )   { throw bad_param{ "by must be greater than or equal to 0" }; }
-    if( Sx < 0 )   { throw bad_param{ "sx must be greater than or equal to 0" }; }
-    if( Sy < 0 )   { throw bad_param{ "sy must be greater than or equal to 0" }; }
-    if( Sx < Bx )  { throw bad_param{ "sx must be greater than or equal to bx" }; }
-    if( Sy < By )  { throw bad_param{ "sy must be greater than or equal to by" }; }
+    if( vi.format->colorFamily == cmCompat ) throw bad_param{ "only planar formats are supported" };
+    if( h <= 0.0 ) throw bad_param{ "h must be greater than 0" };
+    if( a <= 0.0 ) throw bad_param{ "a must be greater than 0" };
+    if( Ax < 0 )   throw bad_param{ "ax must be greater than or equal to 0" };
+    if( Ay < 0 )   throw bad_param{ "ay must be greater than or equal to 0" };
+    if( Az < 0 )   throw bad_param{ "az must be greater than or equal to 0" };
+    if( Bx < 0 )   throw bad_param{ "bx must be greater than or equal to 0" };
+    if( By < 0 )   throw bad_param{ "by must be greater than or equal to 0" };
+    if( Sx < 0 )   throw bad_param{ "sx must be greater than or equal to 0" };
+    if( Sy < 0 )   throw bad_param{ "sy must be greater than or equal to 0" };
+    if( Sx < Bx )  throw bad_param{ "sx must be greater than or equal to bx" };
+    if( Sy < By )  throw bad_param{ "sy must be greater than or equal to by" };
     h2in = -1.0 / (h * h);
     hin = -1.0 / h;
     Sxd = Sx * 2 + 1;
@@ -73,7 +73,7 @@ TNLMeans::TNLMeans
     a2 = a * a;
 
     std::unique_ptr< nlThread [] > threads( new ( std::nothrow ) nlThread[numThreads] );
-    if( threads == nullptr ) { throw bad_alloc{ "threads" }; }
+    if( threads == nullptr ) throw bad_alloc{ "threads" };
 
     for( int i = 0; i < numThreads; ++i )
     {
