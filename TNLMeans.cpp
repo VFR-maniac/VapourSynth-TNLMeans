@@ -182,12 +182,12 @@ VSFrameRef *TNLMeans::GetFrame
     ActiveThread thread( threads, numThreads, mtx );
 
     int peak;
-    std::unique_ptr< const VSFrameRef, decltype( vsapi->freeFrame ) > _src
+    std::unique_ptr< const VSFrameRef, decltype( vsapi->freeFrame ) > unique_src
     (
         vsapi->getFrameFilter( mapn( n ), node, frame_ctx ),
         vsapi->freeFrame
     );
-    const VSFrameRef *src = _src.get();
+    const VSFrameRef *src = unique_src.get();
     if( src )
     {
         const VSFormat *format = vsapi->getFrameFormat( src );
@@ -217,20 +217,25 @@ VSFrameRef *TNLMeans::GetFrame
         return nullptr;
     }
 
-    VSFrameRef *dst = vsapi->newVideoFrame
+    std::unique_ptr< VSFrameRef, decltype( vsapi->freeFrame ) > unique_dst
     (
-        vsapi->getFrameFormat( src ),
-        vsapi->getFrameWidth ( src, 0 ),
-        vsapi->getFrameHeight( src, 0 ),
-        src, core
+        vsapi->newVideoFrame
+        (
+            vsapi->getFrameFormat( src ),
+            vsapi->getFrameWidth ( src, 0 ),
+            vsapi->getFrameHeight( src, 0 ),
+            src, core
+        ),
+        vsapi->freeFrame
     );
+    VSFrameRef *dst = unique_dst.get();
     if( dst == nullptr )
     {
         vsapi->setFilterError( "TNLMeans:  newVideoFrame failure (dst)!", frame_ctx );
         return nullptr;
     }
 
-    _src.reset();
+    unique_src.reset();
 
     if( peak <= 255 )
     {
@@ -247,7 +252,7 @@ VSFrameRef *TNLMeans::GetFrame
             GetFrameByMethod< 0, uint16_t >( n, thread.GetId(), peak, dst, frame_ctx, core, vsapi );
     }
 
-    return dst;
+    return unique_dst.release();
 }
 
 template < int ssd, typename pixel >
