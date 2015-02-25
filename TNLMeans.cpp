@@ -182,23 +182,30 @@ VSFrameRef *TNLMeans::GetFrame
     ActiveThread thread( threads, numThreads, mtx );
 
     int peak;
-    VSFrameRef *dst = nullptr;
-    const VSFrameRef *src = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
+    std::unique_ptr< const VSFrameRef, decltype( vsapi->freeFrame ) > _src
+    (
+        vsapi->getFrameFilter( mapn( n ), node, frame_ctx ),
+        vsapi->freeFrame
+    );
+    const VSFrameRef *src = _src.get();
     if( src )
     {
         const VSFormat *format = vsapi->getFrameFormat( src );
 
         if( format->colorFamily == cmCompat )
         {
-            vsapi->freeFrame( src );
             vsapi->setFilterError( "TNLMeans:  only planar formats are supported", frame_ctx );
+            return nullptr;
+        }
+        if( format->sampleType != stInteger )
+        {
+            vsapi->setFilterError( "TNLMeans:  sample type must be integer!", frame_ctx );
             return nullptr;
         }
 
         const int bps = format->bitsPerSample;
         if( bps <= 0 || bps > 16 )
         {
-            vsapi->freeFrame( src );
             vsapi->setFilterError( "TNLMeans:  bitsPerSample must be 1 to 16!", frame_ctx );
             return nullptr;
         }
@@ -210,19 +217,20 @@ VSFrameRef *TNLMeans::GetFrame
         return nullptr;
     }
 
-    dst = vsapi->newVideoFrame
+    VSFrameRef *dst = vsapi->newVideoFrame
     (
         vsapi->getFrameFormat( src ),
         vsapi->getFrameWidth ( src, 0 ),
         vsapi->getFrameHeight( src, 0 ),
         src, core
     );
-    vsapi->freeFrame( src );
     if( dst == nullptr )
     {
         vsapi->setFilterError( "TNLMeans:  newVideoFrame failure (dst)!", frame_ctx );
         return nullptr;
     }
+
+    _src.reset();
 
     if( peak <= 255 )
     {
