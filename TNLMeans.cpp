@@ -46,7 +46,6 @@ TNLMeans::TNLMeans
     node =  vsapi->propGetNode( in, "clip", 0, 0 );
     vi   = *vsapi->getVideoInfo( node );
     numThreads = vsapi->getCoreInfo( core )->numThreads;
-    if( vi.format->colorFamily == cmCompat ) throw bad_param{ "only planar formats are supported" };
     if( h <= 0.0 ) throw bad_param{ "h must be greater than 0" };
     if( a <= 0.0 ) throw bad_param{ "a must be greater than 0" };
     if( Ax < 0 )   throw bad_param{ "ax must be greater than or equal to 0" };
@@ -187,7 +186,16 @@ VSFrameRef *TNLMeans::GetFrame
     const VSFrameRef *src = vsapi->getFrameFilter( mapn( n ), node, frame_ctx );
     if( src )
     {
-        const int bps = vsapi->getFrameFormat( src )->bitsPerSample;
+        const VSFormat *format = vsapi->getFrameFormat( src );
+
+        if( format->colorFamily == cmCompat )
+        {
+            vsapi->freeFrame( src );
+            vsapi->setFilterError( "TNLMeans:  only planar formats are supported", frame_ctx );
+            return nullptr;
+        }
+
+        const int bps = format->bitsPerSample;
         if( bps <= 0 || bps > 16 )
         {
             vsapi->freeFrame( src );
