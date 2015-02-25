@@ -88,7 +88,7 @@ public:
 class nlThread
 {
 public:
-    int active;
+    bool active;
     AlignedArrayObject< double, 16 > *sumsb;
     AlignedArrayObject< double, 16 > *weightsb;
     AlignedArrayObject< double, 16 > *gw;
@@ -96,6 +96,22 @@ public:
     SDATA   *ds;
     nlThread();
     ~nlThread();
+};
+
+class ActiveThread
+{
+private:
+    int        id;
+    nlThread  *thread;
+public:
+    inline int &GetId() { return id; };
+    ActiveThread
+    (
+        nlThread * &threads,
+        int        &numThreads,
+        std::mutex &mtx
+    );
+    ~ActiveThread();
 };
 
 class TNLMeans

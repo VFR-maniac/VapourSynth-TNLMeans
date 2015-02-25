@@ -180,19 +180,7 @@ VSFrameRef *TNLMeans::GetFrame
     const VSAPI    *vsapi
 )
 {
-    /* Activate an inactive thread. */
-    int threadId = -1;
-    do
-    {
-        std::lock_guard< std::mutex > lock( mtx );
-        for( int i = 0; i < numThreads; ++i )
-            if( !threads[i].active )
-            {
-                threads[i].active = 1;
-                threadId = i;
-                break;
-            }
-    } while( threadId == -1 );
+    ActiveThread thread( threads, numThreads, mtx );
 
     int peak;
     VSFrameRef *dst = nullptr;
@@ -204,14 +192,14 @@ VSFrameRef *TNLMeans::GetFrame
         {
             vsapi->freeFrame( src );
             vsapi->setFilterError( "TNLMeans:  bitsPerSample must be 1 to 16!", frame_ctx );
-            goto fail;
+            return nullptr;
         }
         peak = GetPixelMaxValue( bps );
     }
     else
     {
         vsapi->setFilterError( "TNLMeans:  getFrameFilter failure (src)!", frame_ctx );
-        goto fail;
+        return nullptr;
     }
 
     dst = vsapi->newVideoFrame
@@ -225,26 +213,24 @@ VSFrameRef *TNLMeans::GetFrame
     if( dst == nullptr )
     {
         vsapi->setFilterError( "TNLMeans:  newVideoFrame failure (dst)!", frame_ctx );
-        goto fail;
+        return nullptr;
     }
 
     if( peak <= 255 )
     {
         if( ssd )
-            GetFrameByMethod< 1, uint8_t >( n, threadId, peak, dst, frame_ctx, core, vsapi );
+            GetFrameByMethod< 1, uint8_t >( n, thread.GetId(), peak, dst, frame_ctx, core, vsapi );
         else
-            GetFrameByMethod< 0, uint8_t >( n, threadId, peak, dst, frame_ctx, core, vsapi );
+            GetFrameByMethod< 0, uint8_t >( n, thread.GetId(), peak, dst, frame_ctx, core, vsapi );
     }
     else
     {
         if( ssd )
-            GetFrameByMethod< 1, uint16_t >( n, threadId, peak, dst, frame_ctx, core, vsapi );
+            GetFrameByMethod< 1, uint16_t >( n, thread.GetId(), peak, dst, frame_ctx, core, vsapi );
         else
-            GetFrameByMethod< 0, uint16_t >( n, threadId, peak, dst, frame_ctx, core, vsapi );
+            GetFrameByMethod< 0, uint16_t >( n, thread.GetId(), peak, dst, frame_ctx, core, vsapi );
     }
 
-fail:
-    threads[threadId].active = 0;
     return dst;
 }
 
@@ -881,7 +867,7 @@ void nlCache::clean()
 
 nlThread::nlThread()
 {
-    active = 0;
+    active = false;
     sumsb = weightsb = gw = nullptr;
     fc = nullptr;
     ds = nullptr;
@@ -903,4 +889,31 @@ nlThread::~nlThread()
         delete ds->wmaxs;
         delete ds;
     }
+}
+
+ActiveThread::ActiveThread
+(
+    nlThread * &threads,
+    int        &numThreads,
+    std::mutex &mtx
+) : id( -1 ), thread( nullptr )
+{
+    do
+    {
+        std::lock_guard< std::mutex > lock( mtx );
+        for( int i = 0; i < numThreads; ++i )
+            if( threads[i].active == false )
+            {
+                id     = i;
+                thread = &threads[i];
+                thread->active = true;
+                break;
+            }
+    } while( id == -1 );
+}
+
+ActiveThread::~ActiveThread()
+{
+    if( thread )
+        thread->active = false;
 }
